@@ -91,6 +91,20 @@ describe('Studio exact tool approval', () => {
     });
   });
 
+  it('discards late modal approval after the chat was stopped', async () => {
+    const store = { get: vi.fn(() => []), update: vi.fn(async () => {}) };
+    const scoped = { ...request, allowedExecutions: ['once', 'session', 'project'] as const };
+    let cancelled = false;
+    showWarningMessage.mockImplementationOnce(async () => {
+      cancelled = true;
+      return 'Trust exact command for this project';
+    });
+    await expect(
+      requestVSCodeStudioToolApproval(scoped, store, () => cancelled)
+    ).resolves.toMatchObject({ approved: false, approvedBy: 'vscode:cancelled-command-approval' });
+    expect(store.update).not.toHaveBeenCalled();
+  });
+
   it('reuses an exact session approval without showing another prompt', async () => {
     const scopedRequest = {
       ...request,

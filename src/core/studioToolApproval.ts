@@ -117,8 +117,17 @@ export function buildStudioToolApprovalDetail(request: StudioAgentToolApprovalRe
 export async function requestStudioToolApproval(
   request: StudioAgentToolApprovalRequest,
   present: StudioToolApprovalPresenter,
-  store?: StudioToolApprovalStore
+  store?: StudioToolApprovalStore,
+  isCancelled?: () => boolean
 ): Promise<StudioAgentToolApprovalDecision> {
+  const cancelled: StudioAgentToolApprovalDecision = {
+    approved: false,
+    fingerprint: request.fingerprint,
+    approvedBy: 'vscode:cancelled-command-approval',
+  };
+  if (isCancelled?.()) {
+    return cancelled;
+  }
   if (allowedExecution(request, 'session') && sessionApprovals.has(approvalCacheKey(request))) {
     return {
       approved: true,
@@ -139,6 +148,9 @@ export async function requestStudioToolApproval(
     };
   }
   const execution = await present(request);
+  if (isCancelled?.()) {
+    return cancelled;
+  }
   if (execution && (!allowedExecution(request, execution) || (execution === 'project' && !store))) {
     return {
       approved: false,
@@ -179,7 +191,8 @@ export async function requestStudioToolApproval(
  */
 export async function requestVSCodeStudioToolApproval(
   request: StudioAgentToolApprovalRequest,
-  store?: StudioToolApprovalStore
+  store?: StudioToolApprovalStore,
+  isCancelled?: () => boolean
 ): Promise<StudioAgentToolApprovalDecision> {
   return requestStudioToolApproval(
     request,
@@ -205,6 +218,7 @@ export async function requestVSCodeStudioToolApproval(
             ? 'project'
             : undefined;
     },
-    store
+    store,
+    isCancelled
   );
 }

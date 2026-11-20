@@ -39,7 +39,7 @@ describe('open issues release report', () => {
 
     await expect(
       fetchIssues({
-        repo: 'chistiq/rapidkit-vscode',
+        repo: 'chistiq/workspai-vscode',
         token: 'token',
         state: 'open',
         fetchImpl,
@@ -61,7 +61,7 @@ describe('open issues release report', () => {
 
     await expect(
       fetchIssues({
-        repo: 'chistiq/rapidkit-vscode',
+        repo: 'chistiq/workspai-vscode',
         token: 'token',
         state: 'open',
         fetchImpl: retryingFetch,
@@ -77,7 +77,7 @@ describe('open issues release report', () => {
       );
     await expect(
       fetchIssues({
-        repo: 'chistiq/rapidkit-vscode',
+        repo: 'chistiq/workspai-vscode',
         token: 'token',
         state: 'open',
         fetchImpl: forbiddenFetch,
@@ -96,7 +96,7 @@ describe('open issues release report', () => {
 
     await expect(
       fetchIssues({
-        repo: 'chistiq/rapidkit-vscode',
+        repo: 'chistiq/workspai-vscode',
         token: 'token',
         state: 'open',
         fetchImpl,

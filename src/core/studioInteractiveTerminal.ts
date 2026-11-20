@@ -1,7 +1,9 @@
 import { openTerminal, sendTerminalInput } from '../utils/terminalExecutor.js';
 import crypto from 'node:crypto';
 import path from 'node:path';
+import { stripVTControlCharacters } from 'node:util';
 import { resolveStudioScopePath } from './studioScopePath.js';
+import { resolveStudioInventoryScope } from './studioInventoryScope.js';
 import fs from 'fs-extra';
 import * as vscode from 'vscode';
 import type {
@@ -15,6 +17,7 @@ type Entry = {
   sessionId: string;
   root: string;
   scope: string;
+  command: string;
   terminal: vscode.Terminal;
   execution?: vscode.TerminalShellExecution;
   output: string;
@@ -26,6 +29,27 @@ type Entry = {
   waiters: Set<() => void>;
   startupWaiters: Set<() => void>;
 };
+
+async function rejectNestedProjectScaffold(command: string, cwd: string): Promise<void> {
+  const output = /(?:^|\s)--output(?:=|\s+)(\S+)/.exec(command)?.[1];
+  if (
+    !/^(?:(?:npx(?:\s+(?:--yes|-y))?|npm\s+exec\s+--)\s+)?(?:workspai|wspai)\s+create\s+project\b/i.test(
+      command
+    ) ||
+    /[;&|<>\x60$\\\r\n]/.test(command) ||
+    /(?:^|\s)--(?:dry-run|no-workspace)(?:\s|$)/.test(command) ||
+    (output !== undefined && !['.', '"."', "'.'"].includes(output))
+  ) {
+    return;
+  }
+  const scope = await resolveStudioInventoryScope(cwd);
+  if (scope.resolution === 'parent' || scope.resolution === 'local-link') {
+    throw new Error(
+      'This command would scaffold inside the selected project, not at its Workspai workspace root. Use create-project-in-workspace for a registered kit or explicitly bind the intended workspace before using the CLI.'
+    );
+  }
+}
+
 export class StudioInteractiveTerminalManager implements vscode.Disposable {
   private readonly entries = new Map<string, Entry>();
   private wake(entry: Entry): void {
@@ -77,10 +101,14 @@ export class StudioInteractiveTerminalManager implements vscode.Disposable {
       ok: true,
       output: {
         terminalId: entry.id,
+        command: entry.command,
         state: entry.state,
         background: entry.background,
         exitCode: entry.exitCode,
-        output: entry.output.slice(begin - entry.outputOffset),
+        output: stripVTControlCharacters(entry.output.slice(begin - entry.outputOffset)).replace(
+          /[^\r\n]*\r(?!\n)/g,
+          ''
+        ),
         offset: entry.outputOffset + entry.output.length,
         truncated: offset < entry.outputOffset,
         instruction:
@@ -115,6 +143,10 @@ export class StudioInteractiveTerminalManager implements vscode.Disposable {
     if (relative.startsWith('..') || path.isAbsolute(relative)) {
       throw new Error('Terminal directory must stay within the selected scope.');
     }
+    await rejectNestedProjectScaffold(command, cwd);
+    if (context.signal.aborted) {
+      return { ok: false, error: 'Terminal command was cancelled before execution.' };
+    }
     if (this.hasRunning(context.sessionId)) {
       throw new Error(
         'This session already owns a running command. Read its output or stop it before starting another terminal command.'
@@ -126,6 +158,7 @@ export class StudioInteractiveTerminalManager implements vscode.Disposable {
       sessionId: context.sessionId,
       root: path.resolve(context.workspacePath),
       scope: path.resolve(context.projectPath ?? context.workspacePath),
+      command,
       terminal,
       output: '',
       outputOffset: 0,
@@ -328,8 +361,9 @@ export function studioInteractiveTerminalTools(
       },
       activity: 'change',
       risk: 'invasive',
-      authorize: (raw) => {
-        const command = (raw as Record<string, unknown>)?.command;
+      authorize: async (raw, context) => {
+        const invocation = raw as Record<string, unknown>;
+        const command = invocation?.command;
         const bootstrap =
           typeof command === 'string'
             ? /^(?:npx\s+(?:(?:--yes|-y)\s+)?)?(?:workspai|wspai)\s+agent\s+bootstrap(?:\s+(.*))?$/i.exec(
@@ -347,6 +381,15 @@ export function studioInteractiveTerminalTools(
         if (bootstrap && !remaining) {
           throw new Error(
             'Use inspect-project-agent-entry for this read-only agent bootstrap. Supply the registered project identity from inspect-workspace; the tool resolves its directory and bundled runtime without terminal approval. No terminal was started. Continue the user task with applicable source and project tools if grounding is unavailable.'
+          );
+        }
+        if (typeof command === 'string') {
+          await rejectNestedProjectScaffold(
+            command.trim(),
+            resolveStudioScopePath(
+              context,
+              typeof invocation.cwd === 'string' ? invocation.cwd : '.'
+            )
           );
         }
         return approval('start-terminal', raw);

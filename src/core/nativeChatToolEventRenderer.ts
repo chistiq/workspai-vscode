@@ -47,16 +47,30 @@ function fileChangeRecords(data: Record<string, unknown>): Array<Record<string, 
 
 function renderNativeFileChangeMarkdown(files: Array<Record<string, unknown>>): string {
   const blocks = files.slice(0, 12).map((file) => {
-    const relativePath = String(file.relativePath ?? 'file').replace(/\\/g, '/');
+    const relativePath = String(file.relativePath ?? 'file')
+      .slice(0, 1024)
+      .replace(/[\r\n\t]/gu, ' ')
+      .replace(/[\\`*_{}[\]()<>#~!|]/gu, '\\$&');
     const lines = Array.isArray(file.diffLines) ? file.diffLines : [];
-    const added = lines.filter(
-      (line) =>
-        Boolean(line) && typeof line === 'object' && (line as { type?: string }).type === 'added'
-    ).length;
-    const removed = lines.filter(
-      (line) =>
-        Boolean(line) && typeof line === 'object' && (line as { type?: string }).type === 'removed'
-    ).length;
+    const total = (key: 'addedLines' | 'removedLines', kind: string) =>
+      typeof file[key] === 'number' && Number.isSafeInteger(file[key]) && file[key] >= 0
+        ? file[key]
+        : lines.filter((line) => eventRecord(line).type === kind).length;
+    const status =
+      file.binary === true
+        ? ' · Binary'
+        : file.byteComparison === true
+          ? ' · Byte comparison'
+          : lines.length ||
+              typeof file.addedLines === 'number' ||
+              typeof file.removedLines === 'number'
+            ? ` \`+${total('addedLines', 'added')} −${total('removedLines', 'removed')}\``
+            : '';
+    const header = `**${relativePath}**${status}`;
+    if (file.binary === true || file.byteComparison === true) {
+      return header;
+    }
+    const limited = lines.length > 80;
     const hunk = lines
       .slice(0, 80)
       .map((line) => {
@@ -65,13 +79,20 @@ function renderNativeFileChangeMarkdown(files: Array<Record<string, unknown>>): 
         }
         const typed = line as { type?: string; content?: string };
         const marker = typed.type === 'added' ? '+' : typed.type === 'removed' ? '-' : ' ';
-        return `${marker}${String(typed.content ?? '')}`;
+        return `${marker}${String(typed.content ?? '')
+          .replace(/[\r\n]/gu, ' ')
+          .slice(0, 480)}`;
       })
       .join('\n');
-    const header = `**${relativePath}** \`+${added} −${removed}\``;
-    return hunk.trim() ? `${header}\n\n\`\`\`diff\n${hunk}\n\`\`\`` : header;
+    const longest = (hunk.match(/`+/gu) ?? []).reduce((max, run) => Math.max(max, run.length), 2);
+    const fence = '`'.repeat(longest + 1);
+    return hunk.trim()
+      ? `${header}\n\n${fence}diff\n${hunk}\n${fence}${limited ? '\n\nPreview limited to 80 lines.' : ''}`
+      : header;
   });
-  return `### Changed files\n\n${blocks.join('\n\n')}\n\n`;
+  const omitted =
+    files.length > blocks.length ? `\n\n${files.length - blocks.length} more files changed.` : '';
+  return `### Changed files\n\n${blocks.join('\n\n')}${omitted}\n\n`;
 }
 
 function cliRepairProgressTitle(repair: Record<string, unknown>): string | undefined {
@@ -232,6 +253,9 @@ export function renderNativeStudioAgentEvent(
     return;
   }
   if (event.type === 'model.message' && typeof data.text === 'string' && data.text.trim()) {
+    if (data.protocolMiss === true) {
+      return;
+    }
     const text = data.text.trim();
     if (/^[{[]/.test(text) || /"toolName"\s*:/.test(text)) {
       return;

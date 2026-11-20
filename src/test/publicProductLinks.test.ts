@@ -15,7 +15,7 @@ describe('public product links and version truth', () => {
     expect(shortcuts).toContain('vscode.Uri.parse(URLS.MARKETPLACE)');
     expect(shortcuts).not.toContain('github.com/rapidkit/rapidkit');
     expect(shortcuts).not.toContain("itemName=rapidkit.rapidkit'");
-    expect(constants).toContain("GITHUB: 'https://github.com/chistiq/rapidkit-vscode'");
+    expect(constants).toContain("GITHUB: 'https://github.com/chistiq/workspai-vscode'");
     expect(constants).toContain('itemName=rapidkit.rapidkit-vscode');
   });
 

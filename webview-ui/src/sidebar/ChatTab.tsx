@@ -1,4 +1,11 @@
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import {
+  type MutableRefObject,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { ArrowDown } from 'lucide-react';
 import { chatResponseDisplayParts } from './chatResponseParts';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
@@ -18,6 +25,7 @@ import {
 import type { SidebarModel } from './sidebarModels';
 import {
   basenameFromPath,
+  chatPlanHandoffRequestId,
   chatSessionContextLabel,
   pendingChatApprovals,
   type ChatModeSuggestion,
@@ -34,6 +42,7 @@ interface ChatTabProps {
   scope: SidebarScope;
   sessions: ChatSession[];
   activeSessionId: string | null;
+  drafts?: Map<string, string>;
   onNewSession: () => void;
   onSelectSession: (id: string) => void;
   onDeleteSession: (id: string) => void;
@@ -76,7 +85,7 @@ function scopeDisplayName(scope: SidebarScope): string {
     return 'No workspace selected';
   }
   const project = scope.projectName || basenameFromPath(scope.projectPath);
-  return project ? `${workspace} / ${project}` : `${workspace} / workspace`;
+  return project ? `${workspace} / ${project}` : workspace;
 }
 
 function scopeWorkspaceName(scope: SidebarScope): string | undefined {
@@ -112,10 +121,52 @@ function UserChatContent({ content }: { content: string }) {
 }
 
 export function ChatTab(props: ChatTabProps) {
+  const session = props.sessions.find((entry) => entry.sessionId === props.activeSessionId);
+  const scope = session?.incident ?? session?.scope ?? (session?.editorIssue ? {} : props.scope);
+  const draftKey = JSON.stringify([
+    props.activeSessionId,
+    scope.workspacePath,
+    scope.projectPath,
+    session?.editorIssue?.key,
+    session?.executionTarget?.ref,
+  ]);
+  const lastPrefillKeyRef = useRef<number | undefined>(undefined);
+  const localDrafts = useRef(new Map<string, string>());
+  return (
+    <ScopedChatTab
+      key={draftKey}
+      {...props}
+      draftKey={draftKey}
+      drafts={props.drafts ?? localDrafts.current}
+      lastPrefillKeyRef={lastPrefillKeyRef}
+    />
+  );
+}
+
+function ScopedChatTab(
+  props: ChatTabProps & {
+    draftKey: string;
+    drafts: Map<string, string>;
+    lastPrefillKeyRef: MutableRefObject<number | undefined>;
+  }
+) {
   const { active, sessions, activeSessionId, composerPrefill, composerPrefillKey } = props;
+  const { draftKey, drafts, lastPrefillKeyRef } = props;
   const repairMode = props.chromeMode === 'repair';
   const hasChromeContent = Boolean(props.headerChrome || props.streamChrome);
-  const [prompt, setPrompt] = useState('');
+  const [, refreshDraft] = useState(0);
+  const prompt = drafts.get(draftKey) ?? '';
+  const setPrompt = useCallback(
+    (value: string) => {
+      if ((drafts.get(draftKey) ?? '') === value) return;
+      drafts.delete(draftKey);
+      if (value) drafts.set(draftKey, value);
+      const oldest = drafts.keys().next().value;
+      if (drafts.size > 24 && oldest !== undefined) drafts.delete(oldest);
+      refreshDraft((revision) => revision + 1);
+    },
+    [drafts, draftKey]
+  );
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [attachmentError, setAttachmentError] = useState('');
   const [attachmentBusy, setAttachmentBusy] = useState(false);
@@ -140,10 +191,11 @@ export function ChatTab(props: ChatTabProps) {
       setToolsOpen(false);
     }
   }, [active]);
-  const lastPrefillKeyRef = useRef<number | undefined>(undefined);
   const streamRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    if (!active) return;
     if (!composerPrefill?.trim()) {
       if (repairMode && composerPrefillKey !== lastPrefillKeyRef.current) {
         lastPrefillKeyRef.current = composerPrefillKey;
@@ -156,11 +208,18 @@ export function ChatTab(props: ChatTabProps) {
     }
     lastPrefillKeyRef.current = composerPrefillKey;
     setPrompt(composerPrefill.trim());
-  }, [composerPrefill, composerPrefillKey, repairMode]);
+  }, [active, composerPrefill, composerPrefillKey, repairMode, setPrompt, lastPrefillKeyRef]);
 
   const activeSession = sessions.find((s) => s.sessionId === activeSessionId) ?? null;
   const pendingApprovals = pendingChatApprovals(activeSession);
   const waitingForApproval = pendingApprovals.length > 0;
+  const suggestion = activeSession?.modeSuggestion;
+  const planUnavailable = Boolean(
+    activeSession &&
+    suggestion?.fromMode === 'plan' &&
+    suggestion.toMode === 'agent' &&
+    !chatPlanHandoffRequestId(activeSession, suggestion)
+  );
   useEffect(() => {
     const element = streamRef.current;
     if (!active || !element) return;
@@ -174,6 +233,7 @@ export function ChatTab(props: ChatTabProps) {
     const observer =
       typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(synchronize);
     observer?.observe(element);
+    if (contentRef.current) observer?.observe(contentRef.current);
     return () => {
       if (frame !== undefined && typeof cancelAnimationFrame === 'function')
         cancelAnimationFrame(frame);
@@ -186,7 +246,7 @@ export function ChatTab(props: ChatTabProps) {
 
   const submit = (text?: string) => {
     const trimmed = (text ?? prompt).trim();
-    if ((!trimmed && !attachments.length) || attachmentReadRef.current) {
+    if (waitingForApproval || (!trimmed && !attachments.length) || attachmentReadRef.current) {
       return;
     }
     followStream.current = true;
@@ -239,12 +299,10 @@ export function ChatTab(props: ChatTabProps) {
           sessionCount={sessions.length}
           compact={repairMode}
           allowNewSession={!repairMode}
-          contextText={
-            activeSession?.incident || activeSession?.editorIssue ? composerScopeLabel : null
-          }
+          contextText={composerScopeLabel}
           onNewSession={() => {
             props.onNewSession();
-            setPrompt('');
+            if (!activeSessionId) setPrompt('');
             setHistoryOpen(false);
             setToolsOpen(false);
           }}
@@ -294,117 +352,127 @@ export function ChatTab(props: ChatTabProps) {
             setShowJump(!followStream.current);
           }}
         >
-          {!activeSession || activeSession.messages.length === 0 ? (
-            repairMode || hasChromeContent ? null : (
-              <div className="ws-sidebar__empty-canvas">
-                <span className="ws-sidebar__empty-hint">Ask anything about this workspace</span>
-                {props.suggestions.length > 0 ? (
-                  <div className="ws-chat-starters" aria-label="Suggested prompts">
-                    {props.suggestions.slice(0, 3).map((suggestion) => (
-                      <button type="button" key={suggestion} onClick={() => submit(suggestion)}>
-                        {suggestion}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            )
-          ) : (
-            activeSession.messages.map((message, idx) => {
-              const isLastAssistant =
-                message.role === 'assistant' && idx === activeSession.messages.length - 1;
-              return (
-                <SidebarMessage key={idx} role={message.role === 'user' ? 'user' : 'ai'}>
-                  {message.role === 'assistant' ? (
-                    chatResponseDisplayParts(message).map((part, partIndex, allParts) =>
-                      part.kind === 'activity' ? (
-                        <div key={`activity:${activeSessionId}:${message.id ?? idx}:${partIndex}`}>
-                          {props.renderTurnActivity?.(
-                            { ...message, activity: part.entries },
-                            isLastAssistant,
-                            isLastAssistant && partIndex === allParts.length - 1
-                          )}
-                        </div>
-                      ) : (
-                        <MarkdownRenderer
-                          key={`text:${partIndex}`}
-                          content={part.text}
-                          isStreaming={
-                            isLastAssistant &&
-                            running &&
-                            !activeSession.waitingForInput &&
-                            partIndex === allParts.length - 1
-                          }
-                          onRunCommand={props.onRunCommand}
-                          onCopyCommand={props.onCopyCommand}
-                        />
-                      )
-                    )
-                  ) : (
-                    <UserChatContent content={message.content} />
-                  )}
-                  {isLastAssistant && props.streamChrome ? (
-                    <div className="ws-sidebar__studio-live-activity">{props.streamChrome}</div>
-                  ) : null}
-                  {message.role === 'assistant'
-                    ? props.renderTurnActions?.(message, isLastAssistant)
-                    : null}
-                  {message.role === 'user' && message.images?.length ? (
-                    <div className="ws-sidebar__message-images">
-                      {message.images.map((image, imageIndex) => (
-                        <ChatImagePreview
-                          key={`${activeSessionId}:${message.id ?? idx}:${imageIndex}`}
-                          image={image}
-                          label={`Attached image ${imageIndex + 1}`}
-                          active={active}
-                        />
+          <div className="ws-sidebar__stream-content" ref={contentRef}>
+            {!activeSession || activeSession.messages.length === 0 ? (
+              repairMode || hasChromeContent ? null : (
+                <div className="ws-sidebar__empty-canvas">
+                  <span className="ws-sidebar__empty-hint">Ask anything about this workspace</span>
+                  {props.suggestions.length > 0 ? (
+                    <div className="ws-chat-starters" aria-label="Suggested prompts">
+                      {props.suggestions.slice(0, 3).map((suggestion) => (
+                        <button type="button" key={suggestion} onClick={() => submit(suggestion)}>
+                          {suggestion}
+                        </button>
                       ))}
                     </div>
-                  ) : message.images?.map((image, imageIndex) => (
-                    <img
-                      key={imageIndex}
-                      src={`data:${image.mimeType};base64,${image.base64}`}
-                      alt={`Tool result image ${imageIndex + 1}`}
-                      style={{ maxWidth: '100%', height: 'auto', display: 'block' }}
-                    />
-                  ))}
-                  {message.attachmentError ? (
-                    <small role="status" className="ws-sidebar__attachment-note">
-                      {message.attachmentError}
-                    </small>
                   ) : null}
-                  {message.hasImage && !message.images?.length ? (
-                    <small className="ws-sidebar__attachment-note">
-                      {message.attachmentStored && message.id && props.onRestoreAttachment ? (
-                        <button
-                          type="button"
-                          onClick={() => props.onRestoreAttachment?.(message.id!)}
-                        >
-                          Restore saved attachment
-                        </button>
-                      ) : (
-                        'Image unavailable in this restored chat. Attach it again if needed.'
-                      )}
-                    </small>
-                  ) : null}
-                </SidebarMessage>
-              );
-            })
-          )}
-          {activeSession?.waitingForInput && activeSession.status === 'streaming' ? (
-            <div className="ws-sidebar__attachment-note" role="status">
-              Waiting for your input. Reply below to continue, or stop this session.
-            </div>
-          ) : null}
-          {!repairMode && activeSession?.status === 'error' && activeSession.error ? (
-            <div className="ws-sidebar__error-notice" role="alert">
-              {activeSession.error}
-            </div>
-          ) : null}
-          {props.streamChrome &&
-          activeSession?.messages[activeSession.messages.length - 1]?.role !== 'assistant' ? (
-            <div className="ws-sidebar__studio-live-activity">{props.streamChrome}</div>
-          ) : null}
+                </div>
+              )
+            ) : (
+              activeSession.messages.map((message, idx) => {
+                const isLastAssistant =
+                  message.role === 'assistant' && idx === activeSession.messages.length - 1;
+                return (
+                  <SidebarMessage
+                    key={message.id ?? idx}
+                    role={message.role === 'user' ? 'user' : 'ai'}
+                  >
+                    {message.role === 'assistant' ? (
+                      chatResponseDisplayParts(message).map((part, partIndex, allParts) =>
+                        part.kind === 'activity' ? (
+                          <div
+                            key={`activity:${activeSessionId}:${message.id ?? idx}:${partIndex}`}
+                          >
+                            {props.renderTurnActivity?.(
+                              { ...message, activity: part.entries },
+                              isLastAssistant,
+                              isLastAssistant && partIndex === allParts.length - 1
+                            )}
+                          </div>
+                        ) : (
+                          <MarkdownRenderer
+                            key={`text:${partIndex}`}
+                            content={part.text}
+                            isStreaming={
+                              isLastAssistant &&
+                              running &&
+                              !activeSession.waitingForInput &&
+                              !waitingForApproval &&
+                              partIndex === allParts.length - 1
+                            }
+                            onRunCommand={props.onRunCommand}
+                            onCopyCommand={props.onCopyCommand}
+                          />
+                        )
+                      )
+                    ) : (
+                      <UserChatContent content={message.content} />
+                    )}
+                    {isLastAssistant && props.streamChrome ? (
+                      <div className="ws-sidebar__studio-live-activity">{props.streamChrome}</div>
+                    ) : null}
+                    {message.role === 'assistant'
+                      ? props.renderTurnActions?.(message, isLastAssistant)
+                      : null}
+                    {message.role === 'user' && message.images?.length ? (
+                      <div className="ws-sidebar__message-images">
+                        {message.images.map((image, imageIndex) => (
+                          <ChatImagePreview
+                            key={`${activeSessionId}:${message.id ?? idx}:${imageIndex}`}
+                            image={image}
+                            label={`Attached image ${imageIndex + 1}`}
+                            active={active}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      message.images?.map((image, imageIndex) => (
+                        <img
+                          key={imageIndex}
+                          src={`data:${image.mimeType};base64,${image.base64}`}
+                          alt={`Tool result image ${imageIndex + 1}`}
+                          style={{ maxWidth: '100%', height: 'auto', display: 'block' }}
+                        />
+                      ))
+                    )}
+                    {message.attachmentError ? (
+                      <small role="status" className="ws-sidebar__attachment-note">
+                        {message.attachmentError}
+                      </small>
+                    ) : null}
+                    {message.hasImage && !message.images?.length ? (
+                      <small className="ws-sidebar__attachment-note">
+                        {message.attachmentStored && message.id && props.onRestoreAttachment ? (
+                          <button
+                            type="button"
+                            onClick={() => props.onRestoreAttachment?.(message.id!)}
+                          >
+                            Restore saved attachment
+                          </button>
+                        ) : (
+                          'Image unavailable in this restored chat. Attach it again if needed.'
+                        )}
+                      </small>
+                    ) : null}
+                  </SidebarMessage>
+                );
+              })
+            )}
+            {activeSession?.waitingForInput && activeSession.status === 'streaming' ? (
+              <div className="ws-sidebar__attachment-note" role="status">
+                Waiting for your input. Reply below to continue, or stop this session.
+              </div>
+            ) : null}
+            {!repairMode && activeSession?.status === 'error' && activeSession.error ? (
+              <div className="ws-sidebar__error-notice" role="alert">
+                {activeSession.error}
+              </div>
+            ) : null}
+            {props.streamChrome &&
+            activeSession?.messages[activeSession.messages.length - 1]?.role !== 'assistant' ? (
+              <div className="ws-sidebar__studio-live-activity">{props.streamChrome}</div>
+            ) : null}
+          </div>
         </div>
         {showJump && (
           <button
@@ -451,7 +519,8 @@ export function ChatTab(props: ChatTabProps) {
             <button
               type="button"
               className="ws-sidebar__inline"
-              disabled={activeSession.status === 'streaming'}
+              disabled={activeSession.status !== 'done' || planUnavailable}
+              title={planUnavailable ? 'Complete a new plan before running Agent' : undefined}
               onClick={() => props.onAcceptModeSuggestion?.(activeSession.modeSuggestion!)}
             >
               {activeSession.modeSuggestion.label}
@@ -500,6 +569,7 @@ export function ChatTab(props: ChatTabProps) {
         onSubmit={() => submit()}
         placeholder={scopedPlaceholder}
         disabled={attachmentBusy || (running && !props.onSteer)}
+        submitDisabled={waitingForApproval}
         running={running}
         onCancel={props.onCancel}
         models={props.models}

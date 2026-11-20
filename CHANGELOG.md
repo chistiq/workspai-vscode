@@ -7,10 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.51.0] - 2026-11-20
+
+### Added
+
+- Prepare a compact, project-bound task route by default with Workspai CLI
+  0.82.0. Validate the route contract, payload integrity and UTF-8 budget.
+- Look up manifest-backed lifecycle checks for a known source or test path
+  and expand Graph evidence against the route’s Graph revision.
+- Preview recovery of stale project bindings through the CLI and request
+  exact approval before re-adopting the source in place.
+- Run Agent from the latest completed Plan while carrying forward its
+  verified source scope.
+- Create and register a project in the verified workspace with approval for
+  its exact destination, then select the new project for implementation and checks.
+
+### Changed
+
+- Keep text drafts scoped to their chats and display the active source scope
+  above the conversation. Keep Stop available during approval waits.
+- Show approval outcomes, tool failures, and bounded diff previews in
+  native Chat. Ignore approvals that arrive after cancellation.
+- Refresh the Marketplace summary, searchable keywords, and README setup
+  walkthrough.
+
+- Pin the verified CLI runtime, npm dependency closure, shared contracts and
+  Assistant knowledge to Workspai 0.82.0. Retain native source and verification
+  tools for unavailable Workspai evidence.
+- Refresh the dependency lock for existing high and critical npm advisories
+  within the declared package ranges.
+- Move the repository to `chistiq/workspai-vscode` and preserve the existing
+  Marketplace identity and upgrade path.
+
+### Fixed
+
+- Recover malformed model actions from the latest tool result without replaying
+  the rejected response. Distinguish provider quota exhaustion and avoid repeating
+  requests to a quota-limited model while an alternative is available.
+- Distinguish commands blocked before execution from observed process failures.
+  Clear live activity when a request stops and exclude missing source paths from
+  successful read counts.
+
 ## [0.50.0] - 2026-11-07
 
 ### Added
 
+- Prepare one read-only task-context packet for the exact selected project when
+  its installed Workspai CLI supports `agent context`. Validate project binding,
+  payload integrity and the advertised UTF-8 byte budget; unavailable or older
+  CLI intelligence falls back to native project tools without adoption or a
+  workspace readiness gate.
 - Search an independent incremental embedding index with explicit User Settings,
   a local or current-API embedding provider, current-source hashes, ignore rules,
   bounded storage and separately reported embedding usage. Ordinary search remains
@@ -3405,57 +3451,57 @@ Welcome to RapidKit for Visual Studio Code! This is the first pre-release of the
 - Full mode will be available in future stable releases
 
 **Feedback:**
-We'd love to hear your feedback! Please report issues or suggestions on our [GitHub repository](https://github.com/chistiq/rapidkit-vscode/issues).
+We'd love to hear your feedback! Please report issues or suggestions on our [GitHub repository](https://github.com/chistiq/workspai-vscode/issues).
 
 Thank you for using RapidKit! 🚀
 
 ---
 
-[Unreleased]: https://github.com/chistiq/rapidkit-vscode/compare/v0.50.0...HEAD
-[0.50.0]: https://github.com/chistiq/rapidkit-vscode/compare/v0.49.1...v0.50.0
-[0.49.1]: https://github.com/chistiq/rapidkit-vscode/compare/v0.49.0...v0.49.1
-[0.49.0]: https://github.com/chistiq/rapidkit-vscode/compare/v0.48.0...v0.49.0
-[0.48.0]: https://github.com/chistiq/rapidkit-vscode/compare/v0.47.1...v0.48.0
-[0.47.1]: https://github.com/chistiq/rapidkit-vscode/compare/v0.47.0...v0.47.1
-[0.47.0]: https://github.com/chistiq/rapidkit-vscode/compare/v0.46.0...v0.47.0
-[0.46.0]: https://github.com/chistiq/rapidkit-vscode/compare/v0.45.0...v0.46.0
-[0.45.0]: https://github.com/chistiq/rapidkit-vscode/compare/v0.44.0...v0.45.0
-[0.44.0]: https://github.com/chistiq/rapidkit-vscode/compare/v0.43.0...v0.44.0
-[0.43.0]: https://github.com/chistiq/rapidkit-vscode/compare/v0.42.0...v0.43.0
-[0.42.0]: https://github.com/chistiq/rapidkit-vscode/compare/v0.41.0...v0.42.0
-[0.41.0]: https://github.com/chistiq/rapidkit-vscode/compare/v0.40.0...v0.41.0
-[0.40.0]: https://github.com/chistiq/rapidkit-vscode/compare/v0.39.0...v0.40.0
-[0.39.0]: https://github.com/chistiq/rapidkit-vscode/compare/v0.38.0...v0.39.0
-[0.38.0]: https://github.com/chistiq/rapidkit-vscode/compare/v0.37.0...v0.38.0
-[0.37.0]: https://github.com/chistiq/rapidkit-vscode/compare/v0.36.0...v0.37.0
-[0.36.0]: https://github.com/chistiq/rapidkit-vscode/compare/v0.35.0...v0.36.0
-[0.35.0]: https://github.com/chistiq/rapidkit-vscode/compare/v0.34.0...v0.35.0
-[0.34.0]: https://github.com/chistiq/rapidkit-vscode/compare/v0.33.0...v0.34.0
-[0.33.0]: https://github.com/chistiq/rapidkit-vscode/compare/v0.32.1...v0.33.0
-[0.32.1]: https://github.com/chistiq/rapidkit-vscode/compare/v0.32.0...v0.32.1
-[0.32.0]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.32.0
-[0.31.0]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.31.0
-[0.30.0]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.30.0
-[0.29.1]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.29.1
-[0.29.0]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.29.0
-[0.28.0]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.28.0
-[0.27.3]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.27.3
-[0.24.1]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.24.1
-[0.24.0]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.24.0
-[0.18.0]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.18.0
-[0.12.0]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.12.0
-[0.6.1]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.6.1
-[0.4.5]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.4.5
-[0.4.4]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.4.4
-[0.4.3]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.4.3
-[0.4.2]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.4.2
-[0.4.1]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.4.1
-[0.4.0]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.4.0
-[0.3.2]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.3.2
-[0.3.1]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.3.1
-[0.3.0]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.3.0
-[0.2.0]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.2.0
-[0.1.3]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.1.3
-[0.1.2]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.1.2
-[0.1.1]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.1.1
-[0.1.0]: https://github.com/chistiq/rapidkit-vscode/releases/tag/v0.1.0
+[Unreleased]: https://github.com/chistiq/workspai-vscode/compare/v0.50.0...HEAD
+[0.50.0]: https://github.com/chistiq/workspai-vscode/compare/v0.49.1...v0.50.0
+[0.49.1]: https://github.com/chistiq/workspai-vscode/compare/v0.49.0...v0.49.1
+[0.49.0]: https://github.com/chistiq/workspai-vscode/compare/v0.48.0...v0.49.0
+[0.48.0]: https://github.com/chistiq/workspai-vscode/compare/v0.47.1...v0.48.0
+[0.47.1]: https://github.com/chistiq/workspai-vscode/compare/v0.47.0...v0.47.1
+[0.47.0]: https://github.com/chistiq/workspai-vscode/compare/v0.46.0...v0.47.0
+[0.46.0]: https://github.com/chistiq/workspai-vscode/compare/v0.45.0...v0.46.0
+[0.45.0]: https://github.com/chistiq/workspai-vscode/compare/v0.44.0...v0.45.0
+[0.44.0]: https://github.com/chistiq/workspai-vscode/compare/v0.43.0...v0.44.0
+[0.43.0]: https://github.com/chistiq/workspai-vscode/compare/v0.42.0...v0.43.0
+[0.42.0]: https://github.com/chistiq/workspai-vscode/compare/v0.41.0...v0.42.0
+[0.41.0]: https://github.com/chistiq/workspai-vscode/compare/v0.40.0...v0.41.0
+[0.40.0]: https://github.com/chistiq/workspai-vscode/compare/v0.39.0...v0.40.0
+[0.39.0]: https://github.com/chistiq/workspai-vscode/compare/v0.38.0...v0.39.0
+[0.38.0]: https://github.com/chistiq/workspai-vscode/compare/v0.37.0...v0.38.0
+[0.37.0]: https://github.com/chistiq/workspai-vscode/compare/v0.36.0...v0.37.0
+[0.36.0]: https://github.com/chistiq/workspai-vscode/compare/v0.35.0...v0.36.0
+[0.35.0]: https://github.com/chistiq/workspai-vscode/compare/v0.34.0...v0.35.0
+[0.34.0]: https://github.com/chistiq/workspai-vscode/compare/v0.33.0...v0.34.0
+[0.33.0]: https://github.com/chistiq/workspai-vscode/compare/v0.32.1...v0.33.0
+[0.32.1]: https://github.com/chistiq/workspai-vscode/compare/v0.32.0...v0.32.1
+[0.32.0]: https://github.com/chistiq/workspai-vscode/releases/tag/v0.32.0
+[0.31.0]: https://github.com/chistiq/workspai-vscode/releases/tag/v0.31.0
+[0.30.0]: https://github.com/chistiq/workspai-vscode/releases/tag/v0.30.0
+[0.29.1]: https://github.com/chistiq/workspai-vscode/releases/tag/v0.29.1
+[0.29.0]: https://github.com/chistiq/workspai-vscode/releases/tag/v0.29.0
+[0.28.0]: https://github.com/chistiq/workspai-vscode/releases/tag/v0.28.0
+[0.27.3]: https://github.com/chistiq/workspai-vscode/releases/tag/v0.27.3
+[0.24.1]: https://github.com/chistiq/workspai-vscode/releases/tag/v0.24.1
+[0.24.0]: https://github.com/chistiq/workspai-vscode/releases/tag/v0.24.0
+[0.18.0]: https://github.com/chistiq/workspai-vscode/releases/tag/v0.18.0
+[0.12.0]: https://github.com/chistiq/workspai-vscode/releases/tag/v0.12.0
+[0.6.1]: https://github.com/chistiq/workspai-vscode/releases/tag/v0.6.1
+[0.4.5]: https://github.com/chistiq/workspai-vscode/releases/tag/v0.4.5
+[0.4.4]: https://github.com/chistiq/workspai-vscode/releases/tag/v0.4.4
+[0.4.3]: https://github.com/chistiq/workspai-vscode/releases/tag/v0.4.3
+[0.4.2]: https://github.com/chistiq/workspai-vscode/releases/tag/v0.4.2
+[0.4.1]: https://github.com/chistiq/workspai-vscode/releases/tag/v0.4.1
+[0.4.0]: https://github.com/chistiq/workspai-vscode/releases/tag/v0.4.0
+[0.3.2]: https://github.com/chistiq/workspai-vscode/releases/tag/v0.3.2
+[0.3.1]: https://github.com/chistiq/workspai-vscode/releases/tag/v0.3.1
+[0.3.0]: https://github.com/chistiq/workspai-vscode/releases/tag/v0.3.0
+[0.2.0]: https://github.com/chistiq/workspai-vscode/releases/tag/v0.2.0
+[0.1.3]: https://github.com/chistiq/workspai-vscode/releases/tag/v0.1.3
+[0.1.2]: https://github.com/chistiq/workspai-vscode/releases/tag/v0.1.2
+[0.1.1]: https://github.com/chistiq/workspai-vscode/releases/tag/v0.1.1
+[0.1.0]: https://github.com/chistiq/workspai-vscode/releases/tag/v0.1.0

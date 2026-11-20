@@ -1,4 +1,5 @@
 import { AIModelRequestTimeoutError, getAIToolRequestTimeoutMs } from './aiRequestTimeout.js';
+import { isAIProviderQuotaExhausted } from '../contracts/aiProviderQuota.js';
 import type { AIImageContent } from './aiImageContent.js';
 /**
  * Workspai AI Service
@@ -221,6 +222,9 @@ export type AIModelToolActionResponse = { toolTransport?: 'json'; fallback?: boo
 const jsonOnlyLanguageModels = new WeakSet<vscode.LanguageModelChat>();
 
 function isRetryableToolModelError(error: unknown): boolean {
+  if (isAIProviderQuotaExhausted(error)) {
+    return true;
+  }
   const raw = error instanceof Error ? `${error.name} ${error.message}` : String(error ?? '');
   return /(?:\b(429|rate\s*limit|quota|resource\s*exhausted|temporar(?:y|ily)|unavailable|overloaded|busy|too\s*many\s*requests|service\s*unavailable|model\s*not\s*available|model\s*unavailable|requested\s*model\s*is\s*not\s*supported)\b|model_not_supported|only available to VS Code core)/i.test(
     raw
@@ -252,7 +256,8 @@ export async function requestAIModelToolAction(
   token?: vscode.CancellationToken,
   preferredModelId?: string,
   pathIdentities: ReadonlyArray<AIMessagePathIdentity> = [],
-  onProgress?: import('./aiProviderStream.js').AIProviderStreamObserver
+  onProgress?: import('./aiProviderStream.js').AIProviderStreamObserver,
+  quotaFailures?: Map<string, unknown>
 ): Promise<AIModelToolActionResponse> {
   const all = (await vscode.lm.selectChatModels()).filter(languageModelSupportsExtensionRequests);
   const preferred = preferredModelId?.trim();
@@ -358,11 +363,14 @@ export async function requestAIModelToolAction(
       ? message.toolResult.images?.length
       : 'content' in message && message.images?.length
   );
-  const candidates = [model, ...fallbackModels].filter(
+  const imageCompatibleModels = [model, ...fallbackModels].filter(
     (candidate) =>
       !needsImages ||
       (candidate as vscode.LanguageModelChat & { capabilities?: { imageInput?: boolean } })
         .capabilities?.imageInput !== false
+  );
+  const candidates = imageCompatibleModels.filter(
+    (candidate) => !quotaFailures?.has(languageModelSelectionIdentifier(candidate))
   );
 
   // VS Code only permits Required when exactly one tool is exposed. Studio
@@ -377,6 +385,9 @@ export async function requestAIModelToolAction(
 
   try {
     if (!candidates.length) {
+      if (imageCompatibleModels.length && quotaFailures) {
+        throw quotaFailures.get(languageModelSelectionIdentifier(imageCompatibleModels[0]));
+      }
       throw new Error(
         'The registered language models do not support image input. Select a vision-capable model to inspect this tool result.'
       );
@@ -598,6 +609,9 @@ export async function requestAIModelToolAction(
           throw new AIModelRequestTimeoutError(timeoutMs);
         }
         lastError = error;
+        if (isAIProviderQuotaExhausted(error)) {
+          quotaFailures?.set(modelId, error);
+        }
         if (
           token?.isCancellationRequested ||
           requestTokenSource.token.isCancellationRequested ||

@@ -208,6 +208,33 @@ export function buildAssistantPlanAgentHandoff(input: { request: string; plan: s
   ].join('\n');
 }
 
+/** Bind the handoff to the latest completed read-only Plan request. */
+export function completedAssistantPlan(
+  session: import('./studioAgentEvents.js').StudioAgentPersistedSession | undefined,
+  requestId: string
+): string | undefined {
+  if (
+    session?.status !== 'completed' ||
+    session.assistantMode !== 'plan' ||
+    session.executionPolicy?.profile !== 'implementation-plan'
+  ) {
+    return undefined;
+  }
+  const latest = [...session.events].reverse();
+  const request = latest.find((event) => event.type === 'request.started');
+  const completion = latest.find((event) => event.type === 'session.completed');
+  const original = request?.data.request;
+  const plan = completion?.data.summary;
+  return request?.requestId === requestId &&
+    completion?.requestId === requestId &&
+    typeof original === 'string' &&
+    original.trim() &&
+    typeof plan === 'string' &&
+    plan.trim()
+    ? buildAssistantPlanAgentHandoff({ request: original, plan })
+    : undefined;
+}
+
 export function parseAssistantExecutionPolicy(
   value: unknown,
   expectedSelectedMode: WorkspaiAssistantMode

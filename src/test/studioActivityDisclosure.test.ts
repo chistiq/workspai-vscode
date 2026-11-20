@@ -133,9 +133,36 @@ describe('Stable activity disclosure', () => {
       root.render(createElement(StudioActivityTranscript, { entries: progress }))
     );
     expect(summary().textContent).toContain('5 steps');
-    expect(summary().textContent).toContain('1 failed');
-    expect(summary().textContent).not.toContain('2 failed');
+    expect(summary().textContent).not.toContain('failed');
     expect(summary().textContent).toContain('Needs attention');
+  });
+  it('keeps a recovered command from coloring a running group and removes its spinner on stop', async () => {
+    const progress: SidebarStudioActionProgressView[] = [
+      ...entries.slice(0, 8),
+      { action: 'terminal-command', title: 'Command failed', summary: 'Exit 1', status: 'failed' },
+    ];
+    await act(async () =>
+      root.render(
+        createElement(StudioActivityTranscript, {
+          entries: progress,
+          active: true,
+          showLiveIndicator: true,
+        })
+      )
+    );
+    expect(summary().dataset.state).toBe('active');
+    expect(document.body.textContent).toContain('Choosing next action');
+    await act(async () =>
+      root.render(
+        createElement(StudioActivityTranscript, {
+          entries: progress,
+          active: false,
+          showLiveIndicator: true,
+        })
+      )
+    );
+    expect(summary().dataset.state).toBe('attention');
+    expect(document.body.textContent).not.toContain('Choosing next action');
   });
   it('labels inspected diffs as observations rather than newly authored edits', async () => {
     await act(async () =>

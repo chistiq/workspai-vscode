@@ -6,7 +6,7 @@
       "displayName": "Workspai VS Code",
       "packagePath": "package.json",
       "releaseNotesPattern": "releases/RELEASE_NOTES_v{version}.md",
-      "repository": "chistiq/rapidkit-vscode",
+      "repository": "chistiq/workspai-vscode",
       "tagTemplate": "v{version}",
       "upgradeCommand": "code --install-extension rapidkit.rapidkit-vscode --force"
     }

@@ -5297,7 +5297,7 @@ describe('Studio Agent session runtime', () => {
     ).toHaveLength(1);
   });
 
-  it('fails fast when a model repeatedly misses the native action contract', async () => {
+  it('fails fast when a model repeatedly misses the action contract', async () => {
     const session = new StudioAgentSession(
       {
         id: 'protocol-miss-session',
@@ -5323,7 +5323,8 @@ describe('Studio Agent session runtime', () => {
       expect.objectContaining({
         type: 'session.failed',
         data: expect.objectContaining({
-          error: expect.stringContaining('native Studio tool call'),
+          error: expect.stringContaining('did not return a valid Studio action'),
+          terminalReason: 'model-tool-protocol-exhausted',
         }),
       })
     );

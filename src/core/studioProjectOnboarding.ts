@@ -178,6 +178,79 @@ export function studioProjectOnboardingTool(input: {
     }
     const source = await createStudioProjectTarget(context.projectPath ?? context.workspacePath);
     const inventory = await inspectStudioWorkspaceInventory(source.workspacePath);
+    // Only an explicit re-adopt request can ask the CLI to recover existing metadata.
+    // The CLI owns stale-link and registry validation, including managed-default recreation.
+    if (
+      value.operation === 'adopt' &&
+      value.offer === false &&
+      value.workspacePath === undefined &&
+      inventory.management === 'unknown' &&
+      inventory.workspaiSignature.status === 'present' &&
+      'scope' in inventory &&
+      inventory.scope?.projectPath === source.workspacePath
+    ) {
+      const command = [
+        'adopt',
+        source.workspacePath,
+        ...(typeof value.name === 'string' ? ['--name', value.name] : []),
+        '--json',
+      ];
+      const previewResult = await input.run({
+        args: [...command, '--dry-run'],
+        cwd: source.workspacePath,
+        signal: context.signal,
+      });
+      if (previewResult.exitCode !== 0 || context.signal.aborted) {
+        throw new Error('The installed CLI could not verify recovery of this project binding.');
+      }
+      const preview = cliJSON(previewResult.stdout);
+      const project = preview.adoptedProject as { name?: string; path?: string } | undefined;
+      const ingestion = preview.plan as Record<string, unknown> | undefined;
+      if (
+        preview.dryRun !== true ||
+        typeof preview.workspacePath !== 'string' ||
+        !path.isAbsolute(preview.workspacePath) ||
+        !project?.name ||
+        project.path !== source.workspacePath ||
+        ingestion?.schemaVersion !== 'workspai.ingestion-plan.v1' ||
+        ingestion.action !== 'adopt-project' ||
+        ingestion.mode !== 'link' ||
+        ingestion.source !== source.workspacePath ||
+        ingestion.destination !== source.workspacePath ||
+        ingestion.targetWorkspace !== preview.workspacePath
+      ) {
+        throw new Error('The CLI did not return a verified keep-in-place recovery preview.');
+      }
+      const receipt = await destinationReceipt(preview.workspacePath);
+      if (
+        receipt.path !== preview.workspacePath ||
+        studioPathWithin(source.workspacePath, receipt.path) ||
+        (receipt.missing && preview.wouldCreateDefaultWorkspace !== true) ||
+        (!receipt.missing && !(await hasWorkspace(receipt.path)))
+      ) {
+        throw new Error(
+          'The recovery preview does not identify a canonical workspace destination.'
+        );
+      }
+      const identity = {
+        source: source.workspacePath,
+        sourceIdentity: source.identity,
+        receipt,
+        workspaceIdentity: receipt.missing ? undefined : await workspaceIdentity(receipt.path),
+        name: project.name,
+        command,
+      };
+      return {
+        source,
+        receipt,
+        operation: 'adopt' as const,
+        name: project.name,
+        commands: [command],
+        importedPath: undefined,
+        recovery: true,
+        fingerprint: crypto.createHash('sha256').update(JSON.stringify(identity)).digest('hex'),
+      };
+    }
     if (value.operation === 'adopt' && inventory.management !== 'unmanaged') {
       if (
         inventory.management === 'workspai' &&
@@ -327,7 +400,7 @@ export function studioProjectOnboardingTool(input: {
     risk: 'invasive',
     selectsExecutionTarget: true,
     description:
-      'Offer Workspai onboarding for the SELECTED project. Use adopt to keep source in place; import copies to an explicit owned destination. This exact approval is the consent question, with source, destination and benefits; decline continues the original coding task. Omit workspacePath to use the managed default workspai workspace (reuse legacy default if present); supply the user’s chosen workspace root for custom destination, NOT its parent. Creates a missing workspace explicitly before onboarding. Never select an unrelated project or silently adopt. No --yes/--output/--dry-run flags are invented for adopt/import. For Git URL cloning, inspect installed import help and use an exact-approved CLI command with --git instead.',
+      'Offer onboarding for the selected project. Adopt keeps the source in place; import copies to an approved workspace. For a user-requested recovery of an existing binding use operation=adopt and offer=false, and omit workspacePath so the CLI can preview recovery. Approval is scoped to the selected source and destination. If declined, continue the original task in the source. For a custom destination supply the exact workspace root. For Git cloning inspect installed import help and use an approved CLI command with --git.',
     inputSchema: {
       type: 'object',
       additionalProperties: false,
@@ -362,7 +435,9 @@ export function studioProjectOnboardingTool(input: {
           fingerprint: plan.fingerprint!,
           title:
             plan.operation === 'adopt'
-              ? 'Adopt this project into Workspai?'
+              ? plan.recovery
+                ? 'Recover this Workspai project binding?'
+                : 'Adopt this project into Workspai?'
               : 'Copy this project into Workspai?',
           summary: `Register ${plan.source.name} in ${path.basename(plan.receipt!.path)}. ${plan.operation === 'adopt' ? 'Keep the source in place' : 'Copy the source into the workspace'} for dependency mapping, diagnostics, impact checks and agent grounding. Workspai metadata, grounding and registry entries will change. Decline to continue your original task in the source project.`,
           displayCommand: JSON.stringify(
@@ -421,6 +496,7 @@ export function studioProjectOnboardingTool(input: {
           await validateStudioExecutionTarget(plan.source);
           if (
             args[0] !== 'create' &&
+            !(plan.recovery && plan.receipt!.missing) &&
             (await fs.realpath(plan.receipt!.path)) !== plan.receipt!.path
           ) {
             throw new Error('The approved workspace destination was redirected before onboarding.');

@@ -42,7 +42,7 @@ import { StudioRepairResult } from './StudioRepairResult';
 import { StudioShipLoopStepper } from './StudioShipLoopStepper';
 import { StudioIntelligencePhaseRail } from './StudioIntelligencePhaseRail';
 import type { ChatModeSuggestion, ChatSession } from './sidebarSessions';
-import { chatSessionKind, pendingChatApprovals } from './sidebarSessions';
+import { chatPlanHandoffRequestId, chatSessionKind, pendingChatApprovals } from './sidebarSessions';
 import {
   mergeStudioFixAppliedIntoHandoff,
   resolveStudioFixPhase,
@@ -396,6 +396,7 @@ export function SecondarySidebar() {
   const createMessages = create.activeSession?.messages ?? [];
   const impact = useChatSessions('workspaiImpact', 'impact');
   const studio = useChatSessions('workspaiStudio', 'studio');
+  const assistantDrafts = useRef(new Map<string, string>());
 
   useEffect(() => {
     vscode.postMessage(
@@ -898,6 +899,7 @@ export function SecondarySidebar() {
           !replay &&
           ![
             'request.started',
+            'request.steered',
             'tool.started',
             'tool.completed',
             'tool.failed',
@@ -995,6 +997,12 @@ export function SecondarySidebar() {
           }
         } else if (eventType === 'model.message') {
           const text = typeof eventData.text === 'string' ? eventData.text.trim() : '';
+          if (eventData.protocolMiss === true) {
+            if (eventSessionId && eventData.attempt !== 3) {
+              studio.setActivity(eventSessionId, 'Recovering the next model action…');
+            }
+            break;
+          }
           if (text && eventSessionId) {
             studio.setActivity(
               eventSessionId,
@@ -1372,16 +1380,26 @@ export function SecondarySidebar() {
                           : []),
                       ].join(' ')
                     : undefined;
-          const activityPaths = Array.isArray(toolOutput?.files)
-            ? toolOutput.files
-                .map((entry) =>
-                  entry && typeof entry === 'object' && !Array.isArray(entry)
-                    ? (entry as Record<string, unknown>).path
-                    : undefined
-                )
-                .filter((entry): entry is string => typeof entry === 'string' && entry.length > 0)
-                .slice(0, 12)
-            : [];
+          const terminalId =
+            typeof toolOutput?.terminalId === 'string' ? toolOutput.terminalId : undefined;
+          const sourceFiles = Array.isArray(toolOutput?.files) ? toolOutput.files : [];
+          const missingPaths = sourceFiles.filter(
+            (entry) =>
+              entry &&
+              typeof entry === 'object' &&
+              (entry as Record<string, unknown>).exists === false
+          ).length;
+          const activityPaths = sourceFiles
+            .map((entry) =>
+              entry &&
+              typeof entry === 'object' &&
+              !Array.isArray(entry) &&
+              (entry as Record<string, unknown>).exists !== false
+                ? (entry as Record<string, unknown>).path
+                : undefined
+            )
+            .filter((entry): entry is string => typeof entry === 'string' && entry.length > 0)
+            .slice(0, 12);
           const outputText = [
             toolOutput?.stdout,
             toolOutput?.stderr,
@@ -1400,19 +1418,28 @@ export function SecondarySidebar() {
             Boolean(transactionId);
           const transactionClosed = transaction?.state === 'closed';
           const policyRejected = eventData.policyRejected === true;
+          const authorizationRejected = eventData.authorizationRejected === true;
           recordToolProgress({
             action: toolName,
-            status: policyRejected ? 'done' : eventType === 'tool.completed' ? 'done' : 'failed',
-            phase: copy.phase,
-            title: policyRejected
-              ? 'Verification remains controller-owned'
-              : transactionRestored
-                ? 'Repair attempt restored'
-                : changedFiles
-                  ? `${transactionId?.startsWith('scaffold-') ? 'Created' : 'Changed'} ${changedPaths.length} file${changedPaths.length === 1 ? '' : 's'}${(toolOutput?.scaffoldSummary as { truncated?: boolean } | undefined)?.truncated ? ' (partial scan)' : ''}`
-                  : replay && eventType === 'tool.failed'
-                    ? `Observed: ${copy.title}`
-                    : copy.title,
+            status: authorizationRejected
+              ? 'review'
+              : policyRejected || eventType === 'tool.completed'
+                ? 'done'
+                : 'failed',
+            phase: authorizationRejected ? 'authorization-rejected' : copy.phase,
+            title: authorizationRejected
+              ? 'Tool blocked before execution'
+              : policyRejected
+                ? 'Verification remains controller-owned'
+                : transactionRestored
+                  ? 'Repair attempt restored'
+                  : changedFiles
+                    ? `${transactionId?.startsWith('scaffold-') ? 'Created' : 'Changed'} ${changedPaths.length} file${changedPaths.length === 1 ? '' : 's'}${(toolOutput?.scaffoldSummary as { truncated?: boolean } | undefined)?.truncated ? ' (partial scan)' : ''}`
+                    : replay && eventType === 'tool.failed'
+                      ? `Observed: ${copy.title}`
+                      : missingPaths > 0 && activityPaths.length === 0
+                        ? 'Source files not found'
+                        : copy.title,
             summary: policyRejected
               ? 'A duplicate evidence command was blocked. Studio returned the agent to the required causal source-repair path.'
               : transactionRestored
@@ -1425,7 +1452,9 @@ export function SecondarySidebar() {
                       : transactionClosed
                         ? 'The CLI verified and closed this source transaction.'
                         : 'The edit transaction was applied with rollback metadata. Studio is verifying the result.'
-                    : studioAgentObservationSummary(toolName, toolOutput),
+                    : missingPaths > 0
+                      ? `${missingPaths} requested source path${missingPaths === 1 ? ' was' : 's were'} absent in the selected scope.`
+                      : studioAgentObservationSummary(toolName, toolOutput),
             changedPaths,
             fileChanges,
             activityPaths,
@@ -1450,8 +1479,8 @@ export function SecondarySidebar() {
                   ),
                 }
               : {}),
-            commandText,
-            ...(outputText ? { outputText } : {}),
+            ...(!terminalId && commandText ? { commandText } : {}),
+            ...(!terminalId && outputText ? { outputText } : {}),
             intelligencePhase,
             ...eventMeta,
             ...(transactionId ? { transactionId } : {}),
@@ -1465,22 +1494,25 @@ export function SecondarySidebar() {
           });
           // Completing the tool call only means an observation was delivered.
           // The owned process has its own identity and observed exit status.
-          if (typeof toolOutput?.terminalId === 'string') {
+          if (terminalId && toolOutput) {
             const exited = toolOutput.state === 'exited';
             const running = toolOutput.state === 'running';
+            const knownExit = exited && typeof toolOutput.exitCode === 'number';
             const succeeded = exited && toolOutput.exitCode === 0;
             recordToolProgress({
               action: 'terminal-command',
               phase: running ? 'terminal-running' : exited ? 'terminal-exited' : 'terminal-closed',
-              status: running ? 'running' : succeeded ? 'done' : exited ? 'failed' : 'review',
+              status: running ? 'running' : succeeded ? 'done' : knownExit ? 'failed' : 'review',
               title: running
                 ? 'Command running'
                 : succeeded
                   ? 'Command finished'
-                  : exited
+                  : knownExit
                     ? 'Command failed'
-                    : 'Terminal closed',
-              summary: exited
+                    : exited
+                      ? 'Command exit unconfirmed'
+                      : 'Terminal closed',
+              summary: knownExit
                 ? `Observed exit code: ${String(toolOutput.exitCode)}.`
                 : running
                   ? 'The process is still running. Its result has not been recorded yet.'
@@ -1488,7 +1520,7 @@ export function SecondarySidebar() {
               ...(commandText ? { commandText } : {}),
               ...(outputText ? { outputText } : {}),
               ...eventMeta,
-              invocationId: `terminal:${toolOutput.terminalId}`,
+              invocationId: `terminal:${terminalId}`,
             });
           }
         } else if (eventType === 'verify.completed') {
@@ -1657,7 +1689,8 @@ export function SecondarySidebar() {
           });
           startStudioActionProgress({
             action: activeBlockerHandoff ? 'repair-session' : 'assistant-session',
-            status: eventRequiresDecision ? 'review' : 'failed',
+            status:
+              eventType === 'session.cancelled' || eventRequiresDecision ? 'review' : 'failed',
             phase:
               eventType === 'session.cancelled'
                 ? 'cancelled'
@@ -2323,6 +2356,9 @@ export function SecondarySidebar() {
             label: data.label,
             description: data.description,
             request: data.request,
+            ...(typeof data.sourceRequestId === 'string'
+              ? { sourceRequestId: data.sourceRequestId }
+              : {}),
           });
         }
         break;
@@ -3405,6 +3441,7 @@ export function SecondarySidebar() {
       images?: Array<{ mimeType: string; base64: string }>;
       scope?: CreateAgentScope | null;
       modelId?: string | null;
+      planHandoff?: { sessionId: string; requestId: string };
     }
   ) => {
     const activeStudioSession =
@@ -3437,6 +3474,7 @@ export function SecondarySidebar() {
         history,
         scope: scopePayloadForSession(session, options?.scope === null ? {} : scope),
         scopeMode: options?.scope === null ? 'none' : sessionScopeMode(session),
+        ...(options?.planHandoff ? { planHandoff: options.planHandoff } : {}),
         ...(session.editorIssue ? { editorIssue: session.editorIssue } : {}),
         ...(!options?.forceNew && activeBlockerHandoff
           ? { blockerHandoff: activeBlockerHandoff }
@@ -3491,6 +3529,7 @@ export function SecondarySidebar() {
     if (
       !sessionId ||
       !activeSession ||
+      activeSession.status !== 'done' ||
       activeSession.assistantMode !== suggestion.fromMode ||
       (suggestion.toMode !== 'agent' &&
         suggestion.toMode !== 'ask' &&
@@ -3499,11 +3538,27 @@ export function SecondarySidebar() {
     ) {
       return;
     }
+    const sourceRequestId = chatPlanHandoffRequestId(activeSession, suggestion);
+    if (suggestion.fromMode === 'plan' && suggestion.toMode === 'agent' && !sourceRequestId) {
+      return;
+    }
     studio.setModeSuggestion(sessionId, undefined);
     setAssistantMode(suggestion.toMode);
     setSelectedModelId(assistantModelsRef.current[suggestion.toMode] ?? null);
     setStudioMode(suggestion.toMode === 'plan' ? 'prepare' : 'investigate');
-    submitStudioWithMode(suggestion.request, suggestion.toMode, { forceNew: true });
+    const origin = activeSession.incident ?? activeSession.scope;
+    submitStudioWithMode(suggestion.request, suggestion.toMode, {
+      forceNew: true,
+      scope: origin?.workspacePath
+        ? {
+            workspacePath: origin.workspacePath,
+            workspaceName: origin.workspaceName,
+            projectPath: origin.projectPath,
+            projectName: origin.projectName,
+          }
+        : null,
+      ...(sourceRequestId ? { planHandoff: { sessionId, requestId: sourceRequestId } } : {}),
+    });
   };
 
   handleSubmitImpactRef.current = handleSubmitImpact;
@@ -3591,7 +3646,8 @@ export function SecondarySidebar() {
     activeStudioRepairRunning ||
     activeStudioActionProgress?.status === 'failed' ||
     activeStudioTerminalReason === 'ai-provider-unavailable' ||
-    activeStudioTerminalReason === 'ai-provider-timeout';
+    activeStudioTerminalReason === 'ai-provider-timeout' ||
+    activeStudioTerminalReason === 'ai-provider-quota';
   const visibleStudioVerifyFailureForResult = hideContinuingRepairResult
     ? null
     : activeStudioVerifyFailure;
@@ -4439,6 +4495,7 @@ export function SecondarySidebar() {
         scope={scope}
         sessions={studio.sessions}
         activeSessionId={studio.activeId}
+        drafts={assistantDrafts.current}
         onNewSession={studio.newSession}
         onSelectSession={(id) => {
           studio.selectSession(id);
@@ -4463,11 +4520,8 @@ export function SecondarySidebar() {
                   META
                 )
               }
-              active={
-                isCurrentPart &&
-                activeStudio?.status === 'streaming' &&
-                !activeStudio?.waitingForInput
-              }
+              active={isLatest && activeStudio?.status === 'streaming'}
+              showLiveIndicator={isCurrentPart && !activeStudio?.waitingForInput}
               onOpenFile={(file, transaction) =>
                 openStudioChangedFile(
                   file,
@@ -4574,6 +4628,7 @@ export function SecondarySidebar() {
         scope={scope}
         sessions={studio.sessions}
         activeSessionId={studio.activeId}
+        drafts={assistantDrafts.current}
         onNewSession={studio.newSession}
         onSelectSession={(id) => {
           studio.selectSession(id);
@@ -4635,7 +4690,8 @@ export function SecondarySidebar() {
                   META
                 )
               }
-              active={isCurrentPart && activeStudioRepairRunning && !activeStudio?.waitingForInput}
+              active={isLatest && activeStudioRepairRunning}
+              showLiveIndicator={isCurrentPart && !activeStudio?.waitingForInput}
               onOpenFile={(file, transaction) =>
                 openStudioChangedFile(
                   file,

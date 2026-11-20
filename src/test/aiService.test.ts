@@ -810,6 +810,53 @@ describe('aiService', () => {
     expect(model.sendRequest).toHaveBeenCalledOnce();
   });
 
+  it('keeps using the compatible fallback after a hard quota error in the same run', async () => {
+    const primary = {
+      id: 'auto',
+      vendor: 'copilot',
+      name: 'Auto',
+      sendRequest: vi
+        .fn()
+        .mockRejectedValue(new Error("You've reached your monthly credit limit.")),
+    };
+    const fallback = {
+      id: 'gpt-4o-mini',
+      vendor: 'copilot',
+      name: 'GPT 4o Mini',
+      sendRequest: vi.fn(async () => ({
+        stream: (async function* () {
+          yield new vscode.LanguageModelToolCallPart('read', 'inspect-source', { paths: ['a.ts'] });
+        })(),
+      })),
+    };
+    mockSelectChatModels.mockResolvedValue([primary, fallback]);
+    const quotaFailures = new Map<string, unknown>();
+    const next = () =>
+      requestAIModelToolAction(
+        [],
+        [{ name: 'inspect-source', description: 'Read source' }],
+        undefined,
+        'copilot/auto',
+        [],
+        undefined,
+        quotaFailures
+      );
+    await expect(next()).resolves.toMatchObject({
+      type: 'tool',
+      modelId: 'copilot/gpt-4o-mini',
+      fallback: true,
+      attempts: 2,
+    });
+    await expect(next()).resolves.toMatchObject({
+      type: 'tool',
+      modelId: 'copilot/gpt-4o-mini',
+      fallback: true,
+      attempts: 1,
+    });
+    expect(primary.sendRequest).toHaveBeenCalledTimes(1);
+    expect(fallback.sendRequest).toHaveBeenCalledTimes(2);
+  });
+
   it('lets an Agent decision run beyond the text-stream deadline', async () => {
     vi.useFakeTimers();
     try {

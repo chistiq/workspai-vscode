@@ -1,143 +1,85 @@
 # Workspai for VS Code
 
-<div align="center">
-
 ### AI coding, grounded in your workspace.
 
-Chat with your codebase, plan changes, edit files, run tests, and create projects
-from inside VS Code. Workspai combines an AI coding assistant with workspace
-intelligence: a shared view of your projects, dependencies, and supporting evidence.
+Find the right code, make a change, and see which checks actually passed.
+Workspai is an open-source coding assistant with a workspace graph that
+connects source, tests, dependencies, and diagnostics. Start with the repository
+you already have, or scaffold a new project from chat.
 
-[![Install](https://img.shields.io/visual-studio-marketplace/v/rapidkit.rapidkit-vscode?label=Install&style=flat-square&color=00CFC1)](https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode)
-[![Installs](https://img.shields.io/visual-studio-marketplace/i/rapidkit.rapidkit-vscode?style=flat-square)](https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode)
-[![Open Source](https://img.shields.io/badge/Open%20Source-MIT-111827?style=flat-square)](LICENSE)
+[**Install Workspai for VS Code**](https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode) · [Getting started](docs/GETTING_STARTED.md) · [Documentation](https://www.workspai.dev/)
 
-[Install extension](https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode) · [Documentation](https://www.workspai.dev/) · [GitHub](https://github.com/chistiq/rapidkit-vscode)
+[![Marketplace version](https://img.shields.io/visual-studio-marketplace/v/rapidkit.rapidkit-vscode?style=flat-square&color=00CFC1)](https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode) [![Marketplace installs](https://img.shields.io/visual-studio-marketplace/i/rapidkit.rapidkit-vscode?style=flat-square)](https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode) [![License: MIT](https://img.shields.io/badge/License-MIT-111827?style=flat-square)](LICENSE)
 
-</div>
+![Workspai Agent investigating a workspace issue, reviewing changes, and verifying the repair](media/readme/incident-studio.gif)
 
-<p align="center"><img src="media/readme/incident-studio.gif" alt="Workspai Agent inspecting workspace evidence, changing source, and verifying the result" width="50%" /></p>
+**Ask → inspect → change → test → verify**
 
-<p align="center"><strong>Ask → inspect → change → test → verify</strong></p>
+## Try it on your own repository
 
-## Start in minutes
+1. Install Workspai and open a project in VS Code.
+2. Open **Workspai → Assistant** and select **Ask** to explore or **Agent** to make a change.
+3. Choose an available model and give it a task.
 
-1. [Install Workspai](https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode).
-2. Open an existing repository or start a new workspace in VS Code.
-3. Open the **Workspai** sidebar and start a chat or create a project.
-4. Choose an available model or configure your provider, then describe the task.
+> Add a regression test for this bug and run the closest project checks.
 
-Start with an existing repository; Workspai registration is optional. Try:
+Try **Plan** when you want to review an approach before applying it. Use **Create**
+to quickly scaffold a project, such as a React frontend and a FastAPI service in
+a new workspace. The CLI generates the files from templates, keeping model
+token use low.
 
-- "Explain how authentication works in this project."
-- "Add a regression test for this bug and run the relevant checks."
-- "Create a separate workspace with a Next.js frontend and a NestJS API."
-
-On first use, the extension downloads and integrity-checks its pinned Workspai
-CLI runtime, then reuses the cached copy offline. A separate global CLI install
-is not required for extension-owned operations.
-
-## New in 0.50.0 · November 7, 2026
-
-Find relevant code with hybrid source, Graph and language-provider retrieval,
-or enable an incremental embedding index in User Settings. Delegate independent
-edits to private source forks and review their integration through the parent
-request. Preview inline suggestions, rename symbols with installed language
-providers, and follow clearer streamed activity and optional project onboarding.
-Ordinary coding remains available without Workspai registration or embeddings.
-
-Workspace Agent also retains multi-part requested outcomes and observed source
-coverage, reuses identical context within a model request, and reports unresolved
-work explicitly. Tools remain available; check results and their coverage define
-what was actually verified.
-[Read the release notes](releases/RELEASE_NOTES_v0.50.0.md).
+Registration is optional for ordinary coding. When you want Workspai to maintain
+project context and dependency evidence, approve adoption in place. The extension
+provisions its pinned CLI on first use and caches it. A global CLI install is
+optional.
 
 ## One assistant, four ways to work
 
-| Mode      | Best for                                                            |
-| --------- | ------------------------------------------------------------------- |
-| **Ask**   | Understanding code, architecture, diagnostics, and workspace state. |
-| **Plan**  | Investigating a task and preparing a grounded, read-only plan.      |
-| **Agent** | Editing code, running scoped checks, and verifying the result.      |
-| **Goal**  | Pursuing a defined outcome with explicit checks and progress.       |
+| Mode | What you get |
+| --- | --- |
+| **Ask** | Read-only answers backed by source, diagnostics, and available workspace evidence. |
+| **Plan** | A read-only implementation plan you can review and pass to Agent for the same project. |
+| **Agent** | Scoped source edits, command output, diffs, and the results of the checks that ran. |
+| **Goal** | A durable engineering objective with explicit verification and progress. |
 
-Ask and Plan stay read-only. Agent and Goal can make scoped changes and report
-the checks performed, their results, and any remaining verification.
+### Find the files and checks that matter
 
-## Understand your codebase
+Workspai CLI `0.82.0` supplies a compact route for a selected project. The
+Assistant can use the route to find candidate source and tests, open evidence
+against the same Graph revision, and select an applicable check from the
+project manifest. Source search and editor diagnostics remain available
+when graph evidence is incomplete.
 
-Workspai connects source code with projects, dependencies, contracts, diagnostics,
-and documentation. The Assistant can use this context alongside source search,
-project commands, web research, and enabled VS Code/MCP tools.
+Open **Graph** to explore relationships. Use **Live** and **Artifacts** to
+inspect activity, workspace reports, and the evidence behind decisions.
 
-### Create
+![Workspai Graph showing project relationships and their supporting evidence](media/readme/workspace-graph.png)
 
-Describe the workspace or project you want. Workspai prepares a clear plan for
-review before it creates files or runs setup commands.
+### Review changes and stay in control
 
-### Assistant
-
-Use one conversational loop to inspect evidence, edit source, run project
-commands, review changed files, and verify the outcome. When an operation needs
-permission, the Assistant shows an approval card in the conversation. You can
-run it once, allow the exact action for the session or project when supported,
-or decline it.
-
-An ordinary Agent task does not need an incident card or Workspai registration.
-Select an existing project and describe the task. Adoption in place or import of
-a copy into Workspai requires approval. You can continue ordinary project work
-without registering it.
-
-Review file changes and exact diffs above the composer, then Keep changes or
-Restore the task checkpoint. Follow activity for each response, inspect command
-output, and stop running work. Attached images have thumbnails and full previews.
-
-### Graph
-
-Explore how projects, modules, files, APIs, and dependencies connect. Select an
-entity to inspect its relationships and supporting evidence.
-
-<p align="center"><img src="media/readme/workspace-graph.gif" alt="Workspai workspace graph showing connected entities, relationships, and evidence" width="90%" /></p>
-
-### Live
-
-Follow active commands, completed stages, failures, check results, and model usage.
-Operations Floor brings workspace activity, Graph context, and supporting evidence
-into one view.
-
-### Artifacts
-
-Open the generated Model, Graph, agent context, Skills, reports, and other
-workspace evidence without searching through internal directories.
-
-## Safe without getting in the way
-
-- Read-only investigation can run without unnecessary prompts.
-- Source changes are scoped, recorded, and reversible where supported.
-- Sensitive or invasive actions require an explicit, exact approval.
-- Check results and unfinished verification are reported explicitly.
-- Agent changes can carry their intent, observed effects, and verification as
-  one inspectable record.
+Follow tool activity and command results in chat. Approve sensitive actions for
+their exact scope or decline them. Review changed files with line totals and
+open individual diffs. Use **Keep** or **Restore** for supported source
+checkpoints. You can stop a running request and inspect its recorded activity.
 
 ## Choose your model
 
-Use models available through VS Code, including those exposed by GitHub Copilot,
-or configure a supported API provider or local model. Codex and Grok model
-availability depends on your provider, account access, and configuration.
+Use models exposed by VS Code, including GitHub Copilot models when available,
+or bring your own API key. Workspai supports `OpenAI`, `Claude`, `Gemini`, `Kimi`,
+`DeepSeek`, `xAI (Grok)`, `Ollama`, and additional providers. Codex and Grok model access depends
+on the configured provider and account. Image and tool support depends on the
+model. Provider credentials are stored in VS Code Secret Storage.
 
-`VS Code Models` · `OpenAI` · `Claude` · `Gemini` · `Kimi` · `DeepSeek` ·
-`OpenRouter` · `Groq` · `Mistral` · `xAI (Grok)` · `Ollama` · `Custom`
+Enable inline suggestions in User Settings for editor completions. Supported
+VS Code and MCP tools can extend Assistant capabilities within the host's
+permissions.
 
-Provider credentials are stored in VS Code Secret Storage. Tool and image support
-depends on the selected model and enabled providers.
+## Resources
 
-## Learn more
-
-- [Getting started](docs/GETTING_STARTED.md)
-- [CLI Repair Engine integration](docs/CLI_REPAIR_ENGINE_INTEGRATION.md)
-- [Release notes](RELEASE_NOTES.md)
+- [Setup and provider configuration](docs/GETTING_STARTED.md)
 - [Workspai CLI](https://www.npmjs.com/package/workspai)
+- [Release notes](RELEASE_NOTES.md)
 - [Contributing](CONTRIBUTING.md)
-- [Issues and feature requests](https://github.com/chistiq/rapidkit-vscode/issues)
+- [Issues and feature requests](https://github.com/chistiq/workspai-vscode/issues)
 
 MIT © [Chistiq](https://github.com/chistiq)

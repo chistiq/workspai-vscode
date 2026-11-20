@@ -18,6 +18,8 @@ export function createConfiguredStudioAgentModel(input: {
   history?: StudioAgentConversationMessage[];
   reviewAnswerDelivery?: boolean;
 }): ContractStudioAgentModelAdapter {
+  // A resumed request gets a new adapter and may try the selected model again.
+  const quotaFailures = new Map<string, unknown>();
   const model = new ContractStudioAgentModelAdapter(
     input.objective,
     async (_prompt, request) => {
@@ -28,7 +30,8 @@ export function createConfiguredStudioAgentModel(input: {
         input.token,
         input.modelId,
         input.pathIdentities,
-        request.onProgress
+        request.onProgress,
+        quotaFailures
       );
       const resolution = {
         provider: response.provider,

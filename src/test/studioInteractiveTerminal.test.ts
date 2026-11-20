@@ -175,11 +175,32 @@ describe('Interactive terminal tools', () => {
       const tool = studioInteractiveTerminalTools(manager).find(
         (entry) => entry.name === 'start-terminal'
       )!;
-      expect(() => tool.authorize!({ command }, context)).toThrow('inspect-project-agent-entry');
+      await expect(tool.authorize!({ command }, context)).rejects.toThrow(
+        'inspect-project-agent-entry'
+      );
       expect(mocked.execute).not.toHaveBeenCalled();
       expect(mocked.terminal).toBeUndefined();
     }
   );
+  it('blocks a managed-kit terminal scaffold from a selected child before opening a terminal', async () => {
+    const { manager, context } = await fixture();
+    const selected = path.join(context.workspacePath, 'starter-api');
+    await fs.outputJSON(path.join(context.workspacePath, '.workspai', 'workspace.json'), {
+      workspace_name: 'workspai',
+    });
+    await fs.ensureDir(selected);
+    const tool = studioInteractiveTerminalTools(manager).find(
+      (entry) => entry.name === 'start-terminal'
+    )!;
+    const command = 'npx workspai create project nextjs sports-site --output . --skip-install';
+    await expect(
+      tool.authorize!({ command }, { ...context, projectPath: selected })
+    ).rejects.toThrow('create-project-in-workspace');
+    await expect(tool.authorize!({ command }, context)).resolves.toMatchObject({
+      approval: { execution: 'once' },
+    });
+    expect(mocked.execute).not.toHaveBeenCalled();
+  });
   it.each(['adopt', 'import'] as const)(
     'keeps explicit %s consent tied to the exact source and workspace even in Autopilot',
     async (operation) => {

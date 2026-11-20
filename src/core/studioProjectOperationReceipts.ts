@@ -20,7 +20,7 @@ export function rememberStudioProjectOperation(
   sequence: number
 ): void {
   if (
-    !['onboard-project', 'create-workspace'].includes(tool) ||
+    !['onboard-project', 'create-workspace', 'create-project-in-workspace'].includes(tool) ||
     !result.output ||
     typeof result.output !== 'object' ||
     Array.isArray(result.output)
@@ -50,7 +50,7 @@ export function rememberStudioProjectOperation(
   if (!commands.length) {
     return;
   }
-  const operation = tool === 'create-workspace' ? 'create' : output.operation;
+  const operation = tool === 'onboard-project' ? output.operation : 'create';
   if (!['adopt', 'import', 'create'].includes(String(operation))) {
     return;
   }

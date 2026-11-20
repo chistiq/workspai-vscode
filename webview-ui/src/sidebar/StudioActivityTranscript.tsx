@@ -32,6 +32,7 @@ import { compactStudioActivityEntries, isStudioChangeObservation } from '@/lib/s
 type Props = {
   entries: SidebarStudioActionProgressView[];
   active?: boolean;
+  showLiveIndicator?: boolean;
   onOpenFile?: (path: string, transactionId?: string) => void;
   onOpenDiff?: (path: string, transactionId: string) => void;
   onOpenSubagentActivity?: (requestId: string, toolCallId: string) => void;
@@ -78,6 +79,7 @@ function ActivityDetails({
 export function StudioActivityTranscript({
   entries,
   active = false,
+  showLiveIndicator = active,
   onOpenFile,
   onOpenDiff,
   onOpenSubagentActivity,
@@ -135,7 +137,8 @@ export function StudioActivityTranscript({
     actionableApprovals.map(({ entry, index }) => activityId(entry, index))
   );
   const failedCount = displayed.filter(
-    (entry) => entry.status === 'failed' && entry.receipt?.kind !== 'outcome'
+    (entry) =>
+      entry.status === 'failed' && !['outcome', 'model'].includes(entry.receipt?.kind ?? '')
   ).length;
   const stepCount = displayed.filter(
     (entry) =>
@@ -161,35 +164,51 @@ export function StudioActivityTranscript({
     !active &&
     outcomeBoundary?.eventType === 'session.completed' &&
     outcomeBoundary.status === 'done';
+  const stopped = !active && outcomeBoundary?.eventType === 'session.cancelled';
   const readCount = displayed.reduce(
     (count, entry) => count + (entry.activityPaths?.length ?? 0),
     0
   );
-  const commandCount = displayed.filter(
-    (entry) =>
-      Boolean(entry.commandText) || /run-workspace-command|run-governed-command/.test(entry.action)
-  ).length;
+  const commandCount = new Set(
+    displayed
+      .filter(
+        (entry) =>
+          entry.action === 'terminal-command' ||
+          (Boolean(entry.commandText) &&
+            entry.action !== 'start-terminal' &&
+            entry.phase !== 'authorization-rejected' &&
+            entry.receipt?.kind !== 'approval' &&
+            entry.receipt?.kind !== 'permission')
+      )
+      .map((entry, index) => entry.invocationId ?? activityId(entry, index))
+  ).size;
   const needsAttention =
     !completed &&
+    !stopped &&
     (displayed.some((entry) => entry.status === 'failed') ||
       reviewCount > actionableApprovals.length);
   const waitingForApproval =
     active && displayed.some((entry) => entry.status === 'review' && entry.approvalRequest);
+  const runningStep = displayed.find((entry) => entry.status === 'running');
+  const live = active && (showLiveIndicator || Boolean(runningStep) || waitingForApproval);
   const transcriptLabel = waitingForApproval
     ? 'Waiting for approval'
-    : active
+    : live
       ? 'Working'
-      : needsAttention
-        ? 'Needs attention'
-        : actionableApprovals.length > 0
-          ? 'Needs your input'
-          : outcomeBoundary?.receipt?.verificationAuthority === 'workspace-evidence'
-            ? 'Response ready'
-            : 'Completed';
+      : stopped
+        ? 'Stopped'
+        : needsAttention
+          ? 'Needs attention'
+          : actionableApprovals.length > 0
+            ? 'Needs your input'
+            : outcomeBoundary?.receipt?.verificationAuthority === 'workspace-evidence'
+              ? 'Response ready'
+              : completed
+                ? 'Completed'
+                : 'Activity';
   const transcriptExpanded =
-    expansionChoice ?? (active || !canCollapseTranscript || expandedIds.size > 0);
-  const choosingNextAction =
-    active && !waitingForApproval && !displayed.some((entry) => entry.status === 'running');
+    expansionChoice ?? (live || !canCollapseTranscript || expandedIds.size > 0);
+  const choosingNextAction = live && showLiveIndicator && !waitingForApproval && !runningStep;
   // Page completed history while keeping every live execution and approval
   // actionable. Hidden activity remains in the request's full timeline.
   const visible = displayed
@@ -215,11 +234,11 @@ export function StudioActivityTranscript({
           <button
             type="button"
             className="ws-activity__group-summary"
-            data-state={needsAttention ? 'attention' : active ? 'active' : 'complete'}
+            data-state={live ? 'active' : needsAttention ? 'attention' : 'complete'}
             aria-expanded={!canCollapseTranscript || transcriptExpanded}
             onClick={() => setExpansionChoice(!transcriptExpanded)}
           >
-            {active && !waitingForApproval ? (
+            {live && !waitingForApproval ? (
               <Loader2 size={14} className="ws-activity__spinner" aria-hidden="true" />
             ) : needsAttention ? (
               <AlertCircle size={14} aria-hidden="true" />
@@ -254,7 +273,7 @@ export function StudioActivityTranscript({
           />
         </div>
       ))}
-      {active && canCollapseTranscript && !transcriptExpanded ? (
+      {live && canCollapseTranscript && !transcriptExpanded ? (
         <div className="ws-activity__live-preview" role="status" aria-live="polite">
           <Loader2
             size={13}

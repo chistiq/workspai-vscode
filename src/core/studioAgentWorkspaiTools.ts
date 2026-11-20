@@ -1,9 +1,15 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { inspectStudioWorkspaceInventory } from './studioWorkspaceInventory.js';
 import { searchStudioPublicWeb } from './studioPublicWebSearch.js';
 import { buildStudioCliCatalog, buildStudioWorkspaiArchitecture } from './studioCliKnowledge.js';
 import { buildStudioWorkspaiKnowledge } from './studioWorkspaiKnowledge.js';
-import type { StudioGraphReadRequest } from './studioWorkspaceIntelligenceReads.js';
+import type {
+  StudioGraphReadRequest,
+  StudioLifecyclePlanRequest,
+  StudioTaskContextRequest,
+} from './studioWorkspaceIntelligenceReads.js';
 import { studioWorkspaceImageTool } from './studioWorkspaceImage.js';
 import { studioAgentInstructionsTool } from './studioAgentInstructions.js';
 import { readStudioWorkspaiEvidence, studioProjectDocsTool } from './studioProjectReadTools.js';
@@ -14,6 +20,7 @@ import { STUDIO_EVIDENCE_REFRESH_COMMAND_IDS } from './sidebarStudioAgentRuntime
 import {
   StudioAgentToolRegistry,
   type StudioAgentToolApprovalGrant,
+  type StudioAgentToolContext,
   type StudioAgentToolResult,
 } from './studioAgentToolRegistry.js';
 import {
@@ -30,6 +37,87 @@ import type {
 } from './studioCodeIntelligence.js';
 import { fetchStudioPublicWeb } from './studioPublicWebFetch.js';
 import { studioCodeContextTool } from './studioCodeContextTool.js';
+import { resolveStudioReadProject } from './studioReadProject.js';
+
+async function scopedGraphReadApproval(
+  raw: unknown,
+  context: Pick<StudioAgentToolContext, 'workspacePath' | 'projectPath'>
+) {
+  const value = asRecord(raw);
+  if (value.canonicalWorkspace === undefined) {
+    return undefined;
+  }
+  if (
+    typeof value.canonicalWorkspace !== 'string' ||
+    value.canonicalWorkspace.length > 2000 ||
+    /[\0\r\n]/u.test(value.canonicalWorkspace) ||
+    !path.isAbsolute(value.canonicalWorkspace) ||
+    (value.project !== undefined && typeof value.project !== 'string') ||
+    (value.scope !== undefined && value.scope !== 'project')
+  ) {
+    throw new Error(
+      'Graph access requires an exact absolute workspace directory and project scope.'
+    );
+  }
+  const workspace = await fs.realpath(value.canonicalWorkspace);
+  const selected = await resolveStudioReadProject({
+    ...context,
+    project: value.project,
+  });
+  const inventoryScope = 'scope' in selected.inventory ? selected.inventory.scope : undefined;
+  const source = await fs.realpath(
+    selected.projectPath ?? inventoryScope?.projectPath ?? context.workspacePath
+  );
+  const [workspaceStat, sourceStat] = await Promise.all([fs.stat(workspace), fs.stat(source)]);
+  if (
+    !workspaceStat.isDirectory() ||
+    !sourceStat.isDirectory() ||
+    path.parse(workspace).root === workspace
+  ) {
+    throw new Error('Graph access requires a Workspai workspace and a selected source directory.');
+  }
+  const fingerprint = crypto
+    .createHash('sha256')
+    .update(
+      JSON.stringify([
+        value,
+        workspace,
+        workspaceStat.dev,
+        workspaceStat.ino,
+        source,
+        sourceStat.dev,
+        sourceStat.ino,
+      ])
+    )
+    .digest('hex');
+  return {
+    workspace,
+    approval: {
+      fingerprint,
+      title: 'Read Graph evidence from this Workspai workspace?',
+      summary: 'Workspai will verify project membership and read evidence for the selected source.',
+      displayCommand: JSON.stringify({
+        workspace,
+        source,
+        project: value.project,
+        operation: value.operation ?? 'task route',
+      }),
+      cwd: source,
+      scope: 'project' as const,
+      reasons: ['This workspace was selected explicitly for a project-scoped Graph read.'],
+      execution: 'once' as const,
+      allowedExecutions: ['once' as const],
+    },
+  };
+}
+
+async function approvedGraphWorkspace(raw: unknown, context: StudioAgentToolContext) {
+  const read = await scopedGraphReadApproval(raw, context);
+  if (read && read.approval.fingerprint !== context.approval?.fingerprint) {
+    throw new Error('Canonical workspace access requires approval for this exact read.');
+  }
+  return read?.workspace;
+}
 
 export type StudioAgentSearchMatch = {
   path: string;
@@ -84,6 +172,8 @@ export interface StudioAgentWorkspaiToolHost {
     project?: string;
     signal?: AbortSignal;
   }): Promise<StudioAgentToolResult>;
+  prepareTaskContext?(input: StudioTaskContextRequest): Promise<StudioAgentToolResult>;
+  planProjectLifecycle?(input: StudioLifecyclePlanRequest): Promise<StudioAgentToolResult>;
   inspectProjectCommands?(
     input: Pick<StudioGraphReadRequest, 'workspacePath' | 'projectPath' | 'project' | 'signal'>
   ): Promise<StudioAgentToolResult>;
@@ -877,6 +967,101 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
         }),
     });
   }
+  if (input.host.prepareTaskContext) {
+    register({
+      name: 'prepare-workspai-task-context',
+      title: 'Prepare task context',
+      description:
+        'Read a compact task route early for a concrete project change. Follow its scoped source, Graph and manifest-backed check suggestions. Pass a known project-relative path when available. Choose full only for additional grounding or Skill details. From a workspace chat pass the exact project identity from inspect-workspace. This read does not change execution scope or grant permission.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['task'],
+        properties: {
+          task: { type: 'string', minLength: 1, maxLength: 4096 },
+          path: { type: 'string', minLength: 1, maxLength: 2000 },
+          limit: { type: 'integer', minimum: 1, maximum: 12 },
+          view: { type: 'string', enum: ['route', 'full'] },
+          maxBytes: { type: 'integer', minimum: 1024, maximum: 24576 },
+          canonicalWorkspace: {
+            type: 'string',
+            maxLength: 2000,
+            description:
+              'Exact user-selected canonical Workspai workspace root for a Graph access retry. Requires approval.',
+          },
+          project: { type: 'string', minLength: 1, maxLength: 2000 },
+        },
+      },
+      activity: 'inspect',
+      risk: 'read',
+      async authorize(raw, context) {
+        const read = await scopedGraphReadApproval(raw, context);
+        return read ? { risk: 'invasive', approval: read.approval } : { risk: 'read' };
+      },
+      async execute(raw, context) {
+        const value = asRecord(raw);
+        if (typeof value.task !== 'string' || !value.task.trim()) {
+          throw new Error('A task description is required to prepare scoped context.');
+        }
+        if (value.path !== undefined && typeof value.path !== 'string') {
+          throw new Error('Task context path must be project-relative text.');
+        }
+        if (value.limit !== undefined && typeof value.limit !== 'number') {
+          throw new Error('Task context Graph limit must be an integer from 1 to 12.');
+        }
+        if (value.project !== undefined && typeof value.project !== 'string') {
+          throw new Error('Project must use an exact identity returned by inspect-workspace.');
+        }
+        const approvedWorkspacePath = await approvedGraphWorkspace(raw, context);
+        return input.host.prepareTaskContext!({
+          task: value.task,
+          ...(value.path !== undefined ? { path: value.path as string } : {}),
+          ...(value.limit !== undefined ? { limit: value.limit as number } : {}),
+          ...(value.view !== undefined
+            ? { view: value.view as StudioTaskContextRequest['view'] }
+            : {}),
+          ...(value.maxBytes !== undefined ? { maxBytes: value.maxBytes as number } : {}),
+          ...(approvedWorkspacePath ? { approvedWorkspacePath } : {}),
+          workspacePath: context.workspacePath,
+          ...optionalScope(context),
+          ...(value.project !== undefined ? { project: value.project as string } : {}),
+          signal: context.signal,
+        });
+      },
+    });
+  }
+  if (input.host.planProjectLifecycle) {
+    register({
+      name: 'plan-project-lifecycle',
+      title: 'Plan closest project checks',
+      description:
+        'Read the manifest-backed checks for an existing project-relative source or test path. Use when a new path needs a different check or the route asks for lifecycle.select. Run approved checks separately.',
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['path'],
+        properties: {
+          path: { type: 'string', minLength: 1, maxLength: 2000 },
+          project: { type: 'string', minLength: 1, maxLength: 2000 },
+        },
+      },
+      activity: 'inspect',
+      risk: 'read',
+      execute(raw, context) {
+        const value = asRecord(raw);
+        if (typeof value.path !== 'string' || !value.path.trim()) {
+          throw new Error('An existing project-relative source path is required.');
+        }
+        return input.host.planProjectLifecycle!({
+          path: value.path,
+          workspacePath: context.workspacePath,
+          ...optionalScope(context),
+          ...(value.project !== undefined ? { project: value.project as string } : {}),
+          signal: context.signal,
+        });
+      },
+    });
+  }
   if (input.host.inspectProjectCommands) {
     register({
       name: 'inspect-project-commands',
@@ -906,7 +1091,7 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
       name: 'query-workspace-graph',
       title: 'Query workspace graph',
       description:
-        'Retrieve bounded Workspace Graph search, entities by kind, evidence for an entity, or a path between two entities. Use query for search text/kind/entity/from and target for path destination. Default to the selected project; scope=workspace supports cross-project questions. Use relevant proofs before broad scanning when useful; absent edges are not proof of independence. Source/LSP/other tools remain available.',
+        'Retrieve scoped Graph search, entities, evidence or paths. For task route evidence, pass the returned ID as query, operation=evidence, scope=project and expectedGraphHash from graph.evidence.args. Use workspace scope for cross-project questions. Use native source tools when graph evidence is unavailable.',
       inputSchema: {
         type: 'object',
         required: ['query'],
@@ -916,6 +1101,13 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
           operation: { type: 'string', enum: ['search', 'entities', 'evidence', 'path'] },
           target: { type: 'string', minLength: 1, maxLength: 500 },
           kind: { type: 'string', minLength: 1, maxLength: 500 },
+          expectedGraphHash: { type: 'string', pattern: '^[a-f0-9]{64}$' },
+          canonicalWorkspace: {
+            type: 'string',
+            maxLength: 2000,
+            description:
+              'Exact user-selected Workspai workspace root for project-scoped Graph access. Requires approval.',
+          },
           scope: { type: 'string', enum: ['workspace', 'project'] },
           project: {
             type: 'string',
@@ -928,6 +1120,10 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
       },
       activity: 'inspect',
       risk: 'read',
+      async authorize(raw, context) {
+        const read = await scopedGraphReadApproval(raw, context);
+        return read ? { risk: 'invasive', approval: read.approval } : { risk: 'read' };
+      },
       async execute(raw, context) {
         const value = asRecord(raw);
         if (
@@ -970,6 +1166,7 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
         if (value.operation === 'path' && !value.target) {
           throw new Error('Graph path requires a target.');
         }
+        const approvedWorkspacePath = await approvedGraphWorkspace(raw, context);
         return input.host.graphSearch!({
           query: value.query.trim(),
           ...(value.operation
@@ -977,6 +1174,10 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
             : {}),
           ...(value.target ? { target: value.target as string } : {}),
           ...(value.kind ? { kind: value.kind as string } : {}),
+          ...(value.expectedGraphHash !== undefined
+            ? { expectedGraphHash: value.expectedGraphHash as string }
+            : {}),
+          ...(approvedWorkspacePath ? { approvedWorkspacePath, scope: 'project' } : {}),
           ...(value.scope ? { scope: value.scope as StudioGraphReadRequest['scope'] } : {}),
           ...(value.project !== undefined ? { project: value.project as string } : {}),
           ...(typeof value.limit === 'number' ? { limit: value.limit } : {}),
@@ -1215,6 +1416,32 @@ export function createStudioAgentWorkspaiToolRegistry(input: {
                 type: 'string',
                 enum: ['source', 'search', 'graph', 'diagnostics', 'code-intelligence', 'web'],
               },
+              paths: {
+                type: 'array',
+                items: { type: 'string' },
+                description:
+                  'Paths relative to the selected source. Required for source; optional for search and diagnostics.',
+              },
+              lineStart: { type: 'integer', minimum: 1, description: 'First source line.' },
+              lineEnd: { type: 'integer', minimum: 1, description: 'Last source line.' },
+              query: { type: 'string', description: 'Required for search and graph.' },
+              scope: {
+                type: 'string',
+                enum: ['workspace', 'project'],
+                description: 'Graph scope.',
+              },
+              project: { type: 'string', description: 'Verified project identity for graph.' },
+              limit: {
+                type: 'integer',
+                minimum: 1,
+                maximum: 50,
+                description: 'Graph result limit.',
+              },
+              operation: { type: 'string', description: 'Operation for code-intelligence.' },
+              path: { type: 'string', description: 'File path for code-intelligence.' },
+              line: { type: 'integer' },
+              column: { type: 'integer' },
+              url: { type: 'string', description: 'Public HTTPS URL for web.' },
             },
           },
         },

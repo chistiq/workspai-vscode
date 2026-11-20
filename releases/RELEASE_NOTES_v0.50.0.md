@@ -36,6 +36,13 @@ This release is validated against Workspai CLI 0.80.0.
 
 ## Keep the full task in view with less repeated context
 
+For a selected project change, the Assistant can prepare one read-only task
+context packet when the installed Workspai CLI supports `agent context`. The
+extension checks the selected project binding, packet hash and exact UTF-8 byte
+accounting before passing the packet to the model. Missing or unsupported CLI
+context stays optional: native source, language and project checks remain
+available without adoption or a workspace readiness gate.
+
 Workspace Agent retains distinct requested outcomes from its initial intent
 decision for multi-part tasks without another model request. A single focused
 fix does not require a separate planning ceremony. Long logs retain their
@@ -201,4 +208,13 @@ For optional terminal use outside extension-owned operations:
 npm install -g workspai@0.80.0
 ```
 
-[Compare with v0.49.1](https://github.com/chistiq/rapidkit-vscode/compare/v0.49.1...v0.50.0)
+[Compare with v0.49.1](https://github.com/chistiq/workspai-vscode/compare/v0.49.1...v0.50.0)
+
+## CLI 0.81.1 development follow-up
+
+The local development candidate now consumes CLI 0.81.1 contracts and runtime.
+Typed project-selection recovery stays visible without substituting parent
+context; task guidance uses inline Skills, lifecycle working directories and
+scoped native fallback. The official release runtime remains the verified npm
+closure until CLI 0.81.1 is published and promoted through release-policy gates.
+The repository is now `chistiq/workspai-vscode`; Marketplace identity is preserved.

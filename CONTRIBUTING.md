@@ -19,8 +19,8 @@ contracts, artifacts, and Workspace Intelligence semantics.
 ## Set up the repository
 
 ```bash
-git clone https://github.com/chistiq/rapidkit-vscode.git
-cd rapidkit-vscode
+git clone https://github.com/chistiq/workspai-vscode.git
+cd workspai-vscode
 corepack npm install
 code .
 ```
@@ -175,7 +175,7 @@ archival files clearly; do not copy their instructions into current docs.
 ## Community and support
 
 - [Discord](https://www.workspai.com/discord)
-- [GitHub Discussions](https://github.com/chistiq/rapidkit-vscode/discussions)
-- [Issues](https://github.com/chistiq/rapidkit-vscode/issues)
+- [GitHub Discussions](https://github.com/chistiq/workspai-vscode/discussions)
+- [Issues](https://github.com/chistiq/workspai-vscode/issues)
 
 Be respectful, provide reproducible context, and redact private workspace data.

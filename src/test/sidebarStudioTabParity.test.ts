@@ -141,8 +141,9 @@ describe('React Studio tab ↔ host protocol parity (roadmap 2.11f)', () => {
     expect(secondary).toContain('describeStudioCliRepairPhase');
     expect(secondary).toContain('title: phaseCopy.title');
     expect(secondary).toContain(
-      "status: policyRejected ? 'done' : eventType === 'tool.completed' ? 'done' : 'failed'"
+      'const authorizationRejected = eventData.authorizationRejected === true'
     );
+    expect(secondary).toContain("'Tool blocked before execution'");
     expect(secondary).toContain("'Verification remains controller-owned'");
     expect(secondary).toContain("'sidebarOpenWorkspaceDiff'");
     expect(actionProgress).toContain('exactDiffAvailable');

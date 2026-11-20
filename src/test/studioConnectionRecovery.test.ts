@@ -24,6 +24,16 @@ function create(
   );
 }
 describe('Connection recovery and read progress', () => {
+  it('persists Copilot quota exhaustion as its own terminal state without a network retry', async () => {
+    const next = vi.fn().mockRejectedValue(new Error("You've reached your monthly credit limit."));
+    const result = await create(next).run('Explain the code');
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(result.status).toBe('failed');
+    expect(result.events.find((event) => event.type === 'session.failed')?.data).toMatchObject({
+      terminalReason: 'ai-provider-quota',
+      error: expect.stringContaining('usage quota'),
+    });
+  });
   it('does not advertise a stale successful command after failure, rollback, or a different source fingerprint', () => {
     const state = create(async () => ({ type: 'complete', summary: 'answer' })).snapshot();
     const input = { executable: 'node', args: ['--test'] };

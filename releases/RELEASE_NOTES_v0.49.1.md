@@ -103,4 +103,4 @@ For optional terminal use outside extension-owned operations:
 npm install -g workspai@0.80.0
 ```
 
-[Compare with v0.49.0](https://github.com/chistiq/rapidkit-vscode/compare/v0.49.0...v0.49.1)
+[Compare with v0.49.0](https://github.com/chistiq/workspai-vscode/compare/v0.49.0...v0.49.1)

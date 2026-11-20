@@ -100,8 +100,8 @@ describe('shared contracts workflow (Wave A + B)', () => {
     expect(preCommit).toContain('npm run sync:shared-contracts');
     if (fs.existsSync(npmSyncScriptPath)) {
       const npmSyncScript = fs.readFileSync(npmSyncScriptPath, 'utf8');
-      expect(npmSyncScript).toContain('rapidkit-vscode/contracts');
-      expect(npmSyncScript).toContain('rapidkit-vscode/src/contracts');
+      expect(npmSyncScript).toContain('workspai-vscode/contracts');
+      expect(npmSyncScript).toContain('workspai-vscode/src/contracts');
       expect(npmSyncScript).toContain('listJsonContracts');
     }
   });

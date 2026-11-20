@@ -89,6 +89,7 @@ describe('npm contract support matrix', () => {
       'workspace-intelligence/goal-plan-result.v1.json',
       'workspace-intelligence/project-agent-entry.v1.json',
       'workspace-intelligence/agent-bootstrap-receipt.v1.json',
+      'workspace-intelligence/agent-task-context.v1.json',
       'workspace-registry.v1.json',
     ]) {
       expect(byPath.get(contractPath)?.mode, contractPath).toBe('runtime-consumed');
@@ -109,12 +110,18 @@ describe('npm contract support matrix', () => {
       'analyze-last-run.v1.json',
       'infra-stack.v1.json',
       'workspace-intelligence/goal-index.v1.json',
+      'workspace-intelligence/agent-bootstrap-view.v1.json',
+      'workspace-intelligence/workspace-graph-search-view.v1.json',
     ]) {
       expect(byPath.get(contractPath)?.mode, contractPath).toBe('evidence-consumed');
     }
 
     expect(byPath.get('backend-import-stack-parity.snapshot.json')?.mode).toBe('schema-guarded');
     expect(byPath.get('module-layout.v1.json')?.mode).toBe('schema-guarded');
+    expect(byPath.get('project-lifecycle-context.v1.json')?.mode).toBe('runtime-consumed');
+    expect(byPath.get('workspace-intelligence/agent-task-route.v1.json')?.mode).toBe(
+      'runtime-consumed'
+    );
     expect(byPath.get('cli-log-event.v1.json')?.usage).toContain('RAPIDKIT_LOG_FORMAT=json');
     expect(
       byPath.get('workspace-intelligence/workspace-dependency-graph.v1.json')?.usage

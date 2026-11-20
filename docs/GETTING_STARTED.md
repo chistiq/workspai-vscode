@@ -2,7 +2,7 @@
 
 <!-- WORKSPAI:CLI-RELEASE-POLICY:START -->
 
-> Extension 0.50.0 · verified with Workspai CLI 0.80.0 · minimum compatible CLI 0.80.0
+> Extension 0.51.0 · verified with Workspai CLI 0.82.0 · minimum compatible CLI 0.80.0
 
 <!-- WORKSPAI:CLI-RELEASE-POLICY:END -->
 
@@ -225,7 +225,7 @@ availability and selection in another agent depend on that host's tool support.
 3. Optional: install the CLI when you also want terminal access:
 
    ```bash
-   npm install -g workspai@0.80.0
+   npm install -g workspai@0.82.0
    workspai --version
    ```
 
@@ -466,5 +466,5 @@ a review boundary. Studio must not replace that state with a success message.
 
 - [Workspai Learn](https://www.workspai.dev/)
 - [CLI documentation](https://www.workspai.dev/learn/cli)
-- [GitHub](https://github.com/chistiq/rapidkit-vscode)
-- [Issues](https://github.com/chistiq/rapidkit-vscode/issues)
+- [GitHub](https://github.com/chistiq/workspai-vscode)
+- [Issues](https://github.com/chistiq/workspai-vscode/issues)

@@ -351,7 +351,7 @@ describe('actionsWebviewProvider — manifest + command alignment', () => {
     expect(readme).toContain('| **Plan**');
     expect(readme).toContain('| **Agent**');
     expect(readme).toContain('| **Goal**');
-    expect(readme).toContain('does not need an incident card or Workspai registration');
+    expect(readme).toContain('Registration is optional for ordinary coding.');
     expect(readme).toContain('## Choose your model');
     expect(readme).toContain('`Gemini`');
     expect(readme).toContain('`Kimi`');

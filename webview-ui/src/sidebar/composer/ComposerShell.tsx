@@ -9,6 +9,7 @@ interface ComposerShellProps {
   onSubmit: () => void;
   placeholder: string;
   disabled?: boolean;
+  submitDisabled?: boolean;
   models: SidebarModel[];
   modelLoadError?: string | null;
   selectedModelId: string | null;
@@ -55,7 +56,7 @@ export function ComposerShell(props: ComposerShellProps) {
   };
 
   const submit = () => {
-    if (props.disabled || (!props.value.trim() && !props.hasAttachments)) {
+    if (props.disabled || props.submitDisabled || (!props.value.trim() && !props.hasAttachments)) {
       return;
     }
     props.onSubmit();
@@ -177,7 +178,11 @@ export function ComposerShell(props: ComposerShellProps) {
               className="ws-composer__send"
               aria-label="Send"
               title="Send"
-              disabled={props.disabled || (!props.value.trim() && !props.hasAttachments)}
+              disabled={
+                props.disabled ||
+                props.submitDisabled ||
+                (!props.value.trim() && !props.hasAttachments)
+              }
               onClick={submit}
             >
               <ArrowUp size={15} strokeWidth={2.5} aria-hidden={true} />

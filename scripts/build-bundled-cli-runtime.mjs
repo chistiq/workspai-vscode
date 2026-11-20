@@ -368,6 +368,14 @@ async function buildRuntime({ sourceRoot, version, channel, distribution }) {
   fs.rmSync(runtimeRoot, { recursive: true, force: true });
   fs.mkdirSync(path.join(runtimeRoot, 'dist'), { recursive: true });
 
+  const alias = {};
+  if (sourcePackage.dependencies?.['jsonc-parser']) {
+    // The UMD entry hides relative requires behind a factory. The same
+    // dependency's ESM entry keeps those modules inside the portable bundle.
+    const dependency = resolveDependencyRoot('jsonc-parser', sourceRoot);
+    const esmEntry = readJson(path.join(dependency, 'package.json')).module;
+    alias['jsonc-parser'] = path.join(dependency, esmEntry);
+  }
   await esbuild.build({
     entryPoints: [sourceEntry],
     outfile: path.join(runtimeRoot, 'dist', 'index.mjs'),
@@ -375,6 +383,7 @@ async function buildRuntime({ sourceRoot, version, channel, distribution }) {
     platform: 'node',
     format: 'esm',
     target: 'node20',
+    alias,
     // Native optional watchers cannot be embedded in a portable VSIX. Chokidar
     // already treats fsevents as optional and falls back when it is unavailable.
     external: RUNTIME_EXTERNAL_DEPENDENCIES,

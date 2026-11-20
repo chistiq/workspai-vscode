@@ -63,6 +63,32 @@ describe('nativeChatToolEventRenderer', () => {
     expect(stream.progress).not.toHaveBeenCalled();
   });
 
+  it('uses recorded line totals and contains Markdown authored in diff previews', () => {
+    const stream = { markdown: vi.fn(), progress: vi.fn() };
+    renderNativeStudioAgentEvent(
+      stream,
+      event('tool.completed', {
+        toolName: 'apply-workspace-patch',
+        output: {
+          fileChanges: [
+            {
+              relativePath: '[sample].md',
+              addedLines: 120,
+              removedLines: 9,
+              diffLines: [{ type: 'unchanged', content: '```' }],
+            },
+            { relativePath: 'image.png', binary: true },
+          ],
+        },
+      })
+    );
+    const markdown = stream.markdown.mock.calls[0][0];
+    expect(markdown).toContain('\\[sample\\].md');
+    expect(markdown).toContain('+120 −9');
+    expect(markdown).toContain('````diff\n ```\n````');
+    expect(markdown).toContain('**image.png** · Binary');
+  });
+
   it('renders governed process lifecycle and automatic rollback receipts', () => {
     const stream = { markdown: vi.fn(), progress: vi.fn() };
     renderNativeStudioAgentEvent(

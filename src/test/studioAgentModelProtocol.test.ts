@@ -11,6 +11,57 @@ import {
 import type { StudioAgentModelContext } from '../core/studioAgentSession.js';
 
 describe('Studio Agent model protocol', () => {
+  it('repairs a truncated JSON response without replaying it or losing the prior read', async () => {
+    const malformed = '{"toolName":"inspect-source","input":{"paths":["must-not-replay.ts"]}';
+    const complete = vi
+      .fn()
+      .mockResolvedValueOnce({ toolName: 'inspect-source', input: { paths: ['fences.ts'] } })
+      .mockResolvedValueOnce(malformed)
+      .mockResolvedValueOnce('{"toolName":"inspect-source","input":{"paths":["fences.test.ts"]}}');
+    const adapter = new ContractStudioAgentModelAdapter('Fix fence extraction', complete);
+    const context: StudioAgentModelContext = {
+      session: {
+        schemaVersion: 'workspai.studio-agent-session.v1',
+        id: 'repair',
+        workspacePath: '/workspace',
+        cardId: 'assistant:agent',
+        assistantMode: 'agent',
+        executionAuthority: 'workspace',
+        status: 'running',
+        createdAt: '2026-11-20',
+        updatedAt: '2026-11-20',
+        sequence: 0,
+        events: [],
+      },
+      tools: [
+        {
+          name: 'inspect-source',
+          title: 'Read source',
+          description: 'Read selected project files',
+          inputSchema: { type: 'object' },
+          activity: 'inspect',
+          risk: 'read',
+        },
+      ],
+      steering: [],
+    };
+    await expect(adapter.next(context)).resolves.toMatchObject({ type: 'tool' });
+    const latestObservation = { ok: true, output: { content: 'LAST-VERIFIED-SOURCE-READ' } };
+    await expect(adapter.next({ ...context, latestObservation })).resolves.toMatchObject({
+      type: 'message',
+    });
+    await expect(
+      adapter.next({
+        ...context,
+        latestObservation,
+        toolProtocolRecovery: { attempt: 1, transport: 'json' },
+      })
+    ).resolves.toMatchObject({ type: 'tool', input: { paths: ['fences.test.ts'] } });
+    const payload = JSON.stringify(complete.mock.calls[2]);
+    expect(payload).toContain('Protocol recovery');
+    expect(payload).toContain('LAST-VERIFIED-SOURCE-READ');
+    expect(payload).not.toContain('must-not-replay.ts');
+  });
   it('gives a free-form repair task-scoped Workspai navigation, reusable check receipts and behavioral verification guidance', async () => {
     let prompt = '';
     const adapter = new ContractStudioAgentModelAdapter(

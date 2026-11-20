@@ -3,7 +3,10 @@ import {
   studioActivityReceipt,
   type StudioActivityReceipt,
 } from '../../contracts/studioActivity.js';
-import { resolveStudioCliInspectionCwd } from '../../core/studioWorkspaceAvailability.js';
+import {
+  requireStudioWorkspaceDirectory,
+  resolveStudioCliInspectionCwd,
+} from '../../core/studioWorkspaceAvailability.js';
 import { studioSessionHistoryTool } from '../../core/studioSessionHistoryTool.js';
 import {
   StudioHostToolOutputStore,
@@ -34,6 +37,7 @@ import {
 import { studioProjectOnboardingTool } from '../../core/studioProjectOnboarding.js';
 import {
   studioWorkspaceCreationTool,
+  studioProjectCreationTool,
   studioWorkspaceBindingTool,
 } from '../../core/studioWorkspaceCreation.js';
 import {
@@ -120,6 +124,7 @@ import {
 } from '../../core/createExecutionCapability.js';
 import {
   buildAssistantPlanAgentHandoff,
+  completedAssistantPlan,
   assistantExecutionPolicyInstruction,
   parseAssistantExecutionPolicy,
   type AssistantExecutionPolicy,
@@ -2957,7 +2962,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       payload && typeof payload === 'object' && !Array.isArray(payload)
         ? (payload as Record<string, unknown>)
         : {};
-    const task = typeof payloadRecord.task === 'string' ? payloadRecord.task.trim() : '';
+    let task = typeof payloadRecord.task === 'string' ? payloadRecord.task.trim() : '';
     const requestedModelId =
       typeof payloadRecord.modelId === 'string' && payloadRecord.modelId.trim().length > 0
         ? payloadRecord.modelId.trim()
@@ -3005,6 +3010,35 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       this._inlineStudioCancellationTokens.set(sessionId, new vscode.CancellationTokenSource());
     }
     try {
+      let planOrigin: Awaited<ReturnType<VSCodeStudioAgentSessionStore['load']>>;
+      if (payloadRecord.planHandoff !== undefined) {
+        const origin = payloadRecord.planHandoff as { sessionId?: unknown; requestId?: unknown };
+        if (
+          assistantMode !== 'agent' ||
+          handoff ||
+          typeof origin?.sessionId !== 'string' ||
+          origin.sessionId === sessionId ||
+          typeof origin.requestId !== 'string'
+        ) {
+          throw new Error('Run Agent from a completed Workspai Plan.');
+        }
+        planOrigin = await new VSCodeStudioAgentSessionStore(this._context).load(origin.sessionId);
+        const approvedTask = completedAssistantPlan(planOrigin, origin.requestId);
+        if (!planOrigin || !approvedTask) {
+          throw new Error(
+            'This plan is no longer current. Complete a new plan before running Agent.'
+          );
+        }
+        if (planOrigin.executionTarget) {
+          await validateStudioExecutionTarget(planOrigin.executionTarget);
+        } else {
+          await requireStudioWorkspaceDirectory(planOrigin.workspacePath);
+          if (planOrigin.projectPath) {
+            await requireStudioWorkspaceDirectory(planOrigin.projectPath);
+          }
+        }
+        task = approvedTask;
+      }
       const attachedImages = parseAttachedImages(payloadRecord.images);
       const attachments = new StudioAttachmentStore(
         (this._context.storageUri ?? this._context.globalStorageUri).fsPath
@@ -3080,7 +3114,14 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       await dispatchAssistantTurn({
         task,
         selectedMode: assistantMode,
-        hasProjectScope: Boolean(resolveImpactScopeContext(payloadRecord.scope)?.projectRootPath),
+        hasProjectScope: Boolean(
+          planOrigin
+            ? planOrigin.projectPath ||
+                (planOrigin.executionTarget &&
+                  'kind' in planOrigin.executionTarget &&
+                  planOrigin.executionTarget.kind === 'project')
+            : resolveImpactScopeContext(payloadRecord.scope)?.projectRootPath
+        ),
         history,
         complete: async ({ prompt, toolName, toolSchema }) => {
           const response = await askConfiguredAIProviderForToolAction(
@@ -3104,6 +3145,9 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         isCancelled: () =>
           Boolean(sessionId && this._cancelledInlineStudioSessionIds.has(sessionId)),
         suggest: (intentRoute, executionPolicy) => {
+          if (executionPolicy.profile === 'implementation-plan') {
+            return;
+          }
           const suggestion = executionPolicy.suggestion!;
           this._postInlineCreate('sidebarStudioModeSuggestion', {
             sessionId,
@@ -3122,7 +3166,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             answer,
           }),
         execute: async (intentRoute, executionPolicy) => {
-          if (intentRoute.intent === 'research') {
+          if (!planOrigin && intentRoute.intent === 'research') {
             await this._runExternalResearchSession({
               task: intentRoute.normalizedRequest,
               sessionId,
@@ -3133,36 +3177,54 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             });
             return;
           }
-          const aiContext = await enrichAIModalContextWithProjectMarker(
-            await resolveSidebarChatContext(payloadRecord)
-          );
+          const aiContext: AIModalContext = planOrigin
+            ? {
+                type: planOrigin.projectPath ? 'project' : 'workspace',
+                name: path.basename(planOrigin.projectPath ?? planOrigin.workspacePath),
+                workspaceRootPath: planOrigin.workspacePath,
+                projectRootPath: planOrigin.projectPath,
+              }
+            : await enrichAIModalContextWithProjectMarker(
+                await resolveSidebarChatContext(payloadRecord)
+              );
           if (sessionId && this._cancelledInlineStudioSessionIds.has(sessionId)) {
             return;
           }
           const autonomousWorkspacePath =
+            planOrigin?.workspacePath ??
             handoff?.workspacePath ??
             aiContext.workspaceRootPath ??
             vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+          const planTarget = planOrigin?.executionTarget;
+          const displayedWorkspacePath = planTarget?.workspacePath ?? autonomousWorkspacePath;
+          const displayedProjectPath =
+            planTarget && 'kind' in planTarget && planTarget.kind === 'project'
+              ? planTarget.workspacePath
+              : planOrigin?.projectPath;
           this._postInlineCreate('sidebarStudioScope', {
             sessionId,
-            scopeMode: payloadRecord.scopeMode,
-            workspace: autonomousWorkspacePath
+            scopeMode: planOrigin ? 'scoped' : payloadRecord.scopeMode,
+            workspace: displayedWorkspacePath
               ? {
-                  name: aiContext.workspaceRootPath
-                    ? aiContext.name
-                    : (vscode.workspace.workspaceFolders?.find(
-                        (folder) => folder.uri.fsPath === autonomousWorkspacePath
-                      )?.name ?? path.basename(autonomousWorkspacePath)),
-                  path: autonomousWorkspacePath,
+                  name: planOrigin
+                    ? (planTarget?.name ?? path.basename(displayedWorkspacePath))
+                    : aiContext.workspaceRootPath
+                      ? aiContext.name
+                      : (vscode.workspace.workspaceFolders?.find(
+                          (folder) => folder.uri.fsPath === autonomousWorkspacePath
+                        )?.name ?? path.basename(displayedWorkspacePath)),
+                  path: displayedWorkspacePath,
                 }
               : null,
-            project: aiContext.projectRootPath
-              ? {
-                  name: aiContext.type === 'project' ? aiContext.name : undefined,
-                  path: aiContext.projectRootPath,
-                  type: aiContext.framework,
-                }
-              : null,
+            project: displayedProjectPath
+              ? { name: path.basename(displayedProjectPath), path: displayedProjectPath }
+              : !planOrigin && aiContext.projectRootPath
+                ? {
+                    name: aiContext.type === 'project' ? aiContext.name : undefined,
+                    path: aiContext.projectRootPath,
+                    type: aiContext.framework,
+                  }
+                : null,
           });
           this._postInlineCreate('sidebarStudioThinking', {
             sessionId,
@@ -3183,8 +3245,17 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
               intentRoute,
               executionPolicy,
               workspacePath: autonomousWorkspacePath,
-              projectName: aiContext.type === 'project' ? aiContext.name : undefined,
-              projectPath: handoff?.projectPath ?? aiContext.projectRootPath,
+              projectName: planOrigin
+                ? displayedProjectPath
+                  ? path.basename(displayedProjectPath)
+                  : undefined
+                : aiContext.type === 'project'
+                  ? aiContext.name
+                  : undefined,
+              projectPath:
+                planOrigin?.projectPath ??
+                (planOrigin ? undefined : (handoff?.projectPath ?? aiContext.projectRootPath)),
+              planExecutionTarget: planOrigin?.executionTarget,
               handoff,
               cancellationToken: sessionId
                 ? this._inlineStudioCancellationTokens.get(sessionId)?.token
@@ -3581,6 +3652,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     workspacePath: string;
     projectName?: string;
     projectPath?: string;
+    planExecutionTarget?: StudioExecutionTarget;
     handoff?: StudioBlockerHandoff;
     history?: AIConversationHistoryEntry[];
     cancellationToken?: vscode.CancellationToken;
@@ -3621,7 +3693,8 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     const { intentRoute, executionPolicy } = input;
     const mode = resolveWorkspaiAssistantModeContract(executionPolicy.toolMode);
     const ownedTarget =
-      !input.handoff &&
+      input.planExecutionTarget ??
+      (!input.handoff &&
       input.assistantMode !== 'goal' &&
       executionPolicy.workspaceIntent !== 'use-current' &&
       (executionPolicy.workspaceIntent !== 'create-new' ||
@@ -3629,7 +3702,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       persistedCandidate?.executionAuthority === 'workspace' &&
       studioAgentSessionScopeMatches(persistedCandidate, input)
         ? persistedCandidate.executionTarget
-        : undefined;
+        : undefined);
     let ownedTargetUnavailable = '';
     if (ownedTarget) {
       try {
@@ -5022,7 +5095,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             const execution = await runRapidkitStreaming({
               command: args,
               cwd,
-              featureLabel: 'Assistant workspace creation',
+              featureLabel: 'Assistant project lifecycle',
               timeoutMs: 600_000,
               signal: {
                 onCancelled(listener) {
@@ -5059,6 +5132,9 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       );
       registry.register(studioWorkspaceBindingTool({ onWorkspaceReady }));
       registry.register(studioWorkspaceCreationTool({ run: runOnboardingCli, onWorkspaceReady }));
+      registry.register(
+        studioProjectCreationTool({ run: runOnboardingCli, onTargetReady: onWorkspaceReady })
+      );
     }
     const independentSource = !input.handoff && !persisted?.goal && !persisted?.governedGoal;
     if (!nativeAgent && independentSource && !mode.canMutateWorkspace) {
@@ -5158,6 +5234,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           description:
             'Implement this approved plan with governed mutation, diff review, and verification.',
           request: buildAssistantPlanAgentHandoff({ request: input.task, plan: summary }),
+          sourceRequestId: completion?.requestId,
         });
       }
       this._postInlineCreate('sidebarStudioDone', {

@@ -1,8 +1,8 @@
 {
   "name": "rapidkit-vscode",
   "displayName": "Workspai – Workspace Intelligence",
-  "description": "AI coding assistant for VS Code. Chat, plan, edit, test, and scaffold projects with workspace intelligence, Graph context, and verified CLI tools.",
-  "version": "0.50.0",
+  "description": "AI coding assistant for VS Code. Find code, review edits, run tests, and scaffold projects with workspace intelligence and verified CLI tools.",
+  "version": "0.51.0",
   "packageManager": "npm@10.8.2",
   "publisher": "rapidkit",
   "icon": "media/icons/icon.png",
@@ -11,7 +11,7 @@
     "theme": "dark"
   },
   "preview": false,
-  "qna": "https://github.com/chistiq/rapidkit-vscode/discussions",
+  "qna": "https://github.com/chistiq/workspai-vscode/discussions",
   "engines": {
     "vscode": "^1.106.0"
   },
@@ -22,52 +22,43 @@
   "categories": [
     "AI",
     "Chat",
-    "Debuggers",
     "Testing",
-    "Programming Languages",
-    "Machine Learning",
-    "SCM Providers",
-    "Snippets",
-    "Other"
+    "Debuggers",
+    "Visualization"
   ],
   "keywords": [
     "workspai",
     "rapidkit",
-    "ai",
-    "ai chat",
-    "ai coding",
+    "ai coding assistant",
     "coding agent",
+    "ai chat",
+    "codebase search",
     "workspace intelligence",
-    "codebase",
+    "dependency graph",
     "monorepo",
-    "polyglot",
-    "graph",
-    "context",
-    "skills",
-    "agents.md",
     "mcp",
+    "agents.md",
+    "github copilot",
     "copilot",
     "codex",
     "openai",
     "claude",
     "gemini",
+    "deepseek",
     "grok",
     "ollama",
-    "scaffold",
-    "code generation",
+    "bring your own key",
+    "project scaffolding",
     "code review",
     "testing",
-    "debugging",
-    "automation",
-    "typescript",
-    "python"
+    "debugging"
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/chistiq/rapidkit-vscode.git"
+    "url": "https://github.com/chistiq/workspai-vscode.git"
   },
   "bugs": {
-    "url": "https://github.com/chistiq/rapidkit-vscode/issues"
+    "url": "https://github.com/chistiq/workspai-vscode/issues"
   },
   "homepage": "https://www.workspai.com/",
   "license": "MIT",
@@ -3408,6 +3399,7 @@
   },
   "dependencies": {
     "adm-zip": "^0.6.0",
+    "ajv": "8.20.0",
     "archiver": "^7.0.1",
     "axios": "^1.18.1",
     "chalk": "^5.3.0",
@@ -3439,7 +3431,7 @@
     "prettier": "^3.2.5",
     "typescript": "^5.5.0",
     "vitest": "^4.0.7",
-    "workspai": "0.80.0"
+    "workspai": "0.82.0"
   },
   "overrides": {
     "diff": "^8.0.3",

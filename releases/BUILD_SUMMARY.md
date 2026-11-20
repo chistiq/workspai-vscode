@@ -403,7 +403,7 @@ npm run publish
 
 **Built by**: RapidKit Team
 **License**: MIT
-**Repository**: https://github.com/chistiq/rapidkit-vscode
+**Repository**: https://github.com/chistiq/workspai-vscode
 **Marketplace**: https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode
 
 ---

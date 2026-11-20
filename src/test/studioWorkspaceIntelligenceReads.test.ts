@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import fs from 'fs-extra';
 import os from 'node:os';
 import path from 'node:path';
@@ -31,8 +32,64 @@ const graph = {
   proofs: [{ id: 'p1', artifact: 'handler.ts', provider: 'source', trust: 'authoritative' }],
   budget: { omitted: { proofs: 3 } },
 };
+const installedCli = path.resolve('node_modules/workspai/dist/index.js');
+
+function installedRunner(home: string): StudioIntelligenceReadRunner {
+  return async ({ command, cwd }) => {
+    const result = spawnSync(process.execPath, [installedCli, ...command], {
+      cwd,
+      encoding: 'utf8',
+      timeout: 10_000,
+      env: { ...process.env, HOME: home, USERPROFILE: home, NO_COLOR: '1' },
+    });
+    if (result.error) throw result.error;
+    return {
+      failed: result.status !== 0,
+      exitCode: result.status,
+      result: result.stdout.trim() ? JSON.parse(result.stdout) : undefined,
+      stderr: result.stderr,
+    };
+  };
+}
+function sealedTaskContext(input: {
+  status: 'ready' | 'partial';
+  task: string;
+  scope: Record<string, unknown>;
+  grounding?: Record<string, unknown>;
+  graph?: Record<string, unknown>;
+}): Record<string, unknown> {
+  const packet: Record<string, unknown> = {
+    schemaVersion: 'workspai.agent-task-context.v1',
+    status: input.status,
+    task: { text: input.task, use: 'retrieval-query', authority: 'user-request' },
+    scope: input.scope,
+    grounding: input.grounding ?? { status: 'unavailable' },
+    graph: input.graph ?? { status: 'unavailable' },
+    lifecycle: { status: 'path-not-mapped' },
+    operatingRules: ['Read-only evidence.'],
+    nextActions: ['Continue with project-native tools.'],
+    budget: {
+      maxBytes: 24576,
+      usedBytes: 0,
+      accounting: 'utf8-json-with-newline',
+    },
+    integrity: { algorithm: 'sha256', payloadHash: '0'.repeat(64) },
+  };
+  const budget = packet.budget as Record<string, unknown>;
+  while (budget.usedBytes !== Buffer.byteLength(`${JSON.stringify(packet)}\n`, 'utf8')) {
+    budget.usedBytes = Buffer.byteLength(`${JSON.stringify(packet)}\n`, 'utf8');
+  }
+  const unsigned = { ...packet };
+  delete unsigned.integrity;
+  const integrity = packet.integrity as Record<string, unknown>;
+  integrity.payloadHash = crypto
+    .createHash('sha256')
+    .update(JSON.stringify(unsigned))
+    .digest('hex');
+  return packet;
+}
 async function fixture() {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-intelligence-'));
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'studio-intelligence-')));
   roots.push(root);
   const workspace = path.join(root, 'team');
   const project = path.join(workspace, 'renamed-folder');
@@ -94,6 +151,168 @@ async function fixture() {
 }
 
 describe('Shared scoped Workspace Intelligence retrieval', () => {
+  it('consumes the npm-pinned route and strict lifecycle plan in an unmanaged project', async () => {
+    const f = await fixture();
+    const source = path.join(f.root, 'standalone');
+    const testFile = 'tests/size.test.js';
+    await fs.outputJSON(path.join(source, 'package.json'), {
+      name: 'standalone',
+      scripts: { test: 'node --test', 'test:size': 'node --test tests/size.test.js' },
+    });
+    await fs.outputFile(path.join(source, testFile), '');
+    const run = vi.fn(installedRunner(f.root));
+    const readers = studioWorkspaceIntelligenceReaders(run);
+    const request = { workspacePath: source, task: 'Fix the size formatter', path: testFile };
+    const result = await readers.prepareTaskContext(request);
+    expect(result, result.error).toMatchObject({
+      ok: true,
+      output: {
+        view: 'route',
+        context: {
+          schemaVersion: 'workspai.agent-task-route.v1',
+          status: 'partial',
+          scope: { project: 'standalone', workspace: null, binding: 'not-workspai-managed' },
+          execution: { projectRoot: { relativePath: '.' } },
+          host: { permission: 'not-observed', execution: 'not-observed' },
+          actions: expect.arrayContaining([
+            expect.objectContaining({ id: 'lifecycle.test', focus: testFile, cwd: '.' }),
+          ]),
+        },
+      },
+    });
+    expect(run.mock.calls[0][0].command.slice(-2)).toEqual(['--view', 'route']);
+    const small = await readers.prepareTaskContext({ ...request, maxBytes: 1024 });
+    expect(small).toMatchObject({
+      ok: true,
+      output: { context: { status: 'insufficient-budget', recovery: expect.any(Array) } },
+    });
+    const unbound = await readers.prepareTaskContext({ ...request, path: 'missing.js' });
+    expect(unbound).toMatchObject({
+      ok: true,
+      output: { context: { status: 'project-selection-required', recovery: expect.any(Array) } },
+    });
+    const plan = await readers.planProjectLifecycle({ workspacePath: source, path: testFile });
+    expect(plan).toMatchObject({
+      ok: true,
+      output: {
+        plan: {
+          schemaVersion: 'workspai.project-lifecycle-context.v1',
+          status: 'ready',
+          selection: { path: testFile, mode: 'closest-unit' },
+          units: [{ manifest: 'package.json' }],
+        },
+      },
+    });
+    expect(await fs.pathExists(path.join(source, '.workspai'))).toBe(false);
+  }, 20000);
+
+  it('uses legacy full context only when the CLI explicitly rejects the route flag', async () => {
+    const f = await fixture();
+    const request = { workspacePath: f.workspace, project: 'billing', task: 'Inspect source' };
+    f.run.mockResolvedValueOnce({ failed: true, exitCode: 1, stderr: 'Graph access denied' });
+    expect(await f.readers.prepareTaskContext(request)).toMatchObject({ ok: false });
+    expect(f.run).toHaveBeenCalledTimes(1);
+
+    f.run
+      .mockResolvedValueOnce({
+        failed: true,
+        exitCode: 1,
+        stderr: "error: unknown option '--view'\n",
+      })
+      .mockResolvedValueOnce({
+        failed: false,
+        exitCode: 0,
+        result: sealedTaskContext({
+          status: 'partial',
+          task: request.task,
+          scope: {
+            project: 'billing',
+            projectPath: 'renamed-folder',
+            workspace: 'team',
+            binding: 'canonical-project-member',
+          },
+        }),
+      });
+    expect(await f.readers.prepareTaskContext(request)).toMatchObject({
+      ok: true,
+      output: { view: 'full', context: { status: 'partial' } },
+    });
+    expect(f.run).toHaveBeenCalledTimes(3);
+    expect(f.run.mock.calls[2][0].command).not.toContain('--view');
+  });
+
+  it('requests and verifies the Graph revision when expanding project evidence', async () => {
+    const f = await fixture();
+    const expectedGraphHash = 'a'.repeat(64);
+    const request = {
+      workspacePath: f.workspace,
+      projectPath: f.project,
+      operation: 'evidence' as const,
+      scope: 'project' as const,
+      query: 'wkg:file:handler',
+      expectedGraphHash,
+    };
+    f.run.mockResolvedValueOnce({
+      failed: false,
+      exitCode: 0,
+      result: { found: true, graphHash: expectedGraphHash, proofs: [] },
+    });
+    expect(await f.readers.graphSearch(request)).toMatchObject({
+      ok: true,
+      output: { scope: 'project:billing', coverage: { graphRevision: expectedGraphHash } },
+    });
+    expect(f.run.mock.calls[0][0].command).toEqual(
+      expect.arrayContaining([
+        '--expected-graph-hash',
+        expectedGraphHash,
+        '--scope',
+        'project:billing',
+      ])
+    );
+    expect(await f.readers.graphSearch(request)).toMatchObject({ ok: false });
+  });
+
+  it('requires exact approval before reading Graph from an explicitly selected workspace', async () => {
+    const f = await fixture();
+    const registry = createStudioAgentWorkspaiToolRegistry({
+      host: f.readers as StudioAgentWorkspaiToolHost,
+      assistantMode: 'ask',
+      executionAuthority: 'workspace',
+      cardId: 'assistant:ask',
+    });
+    const tool = registry.get('query-workspace-graph')!;
+    const raw = { query: 'handler', canonicalWorkspace: f.workspace };
+    const context = {
+      workspacePath: f.external,
+      sessionId: 's',
+      requestId: 'r',
+      toolCallId: 't',
+      signal: new AbortController().signal,
+    };
+    const authorization = await tool.authorize!(raw, context);
+    expect(authorization).toMatchObject({
+      risk: 'invasive',
+      approval: { scope: 'project', execution: 'once' },
+    });
+    await expect(tool.execute(raw, context)).rejects.toThrow('requires approval');
+    expect(f.run).not.toHaveBeenCalled();
+    const approved = {
+      ...context,
+      approval: {
+        fingerprint: authorization.approval!.fingerprint,
+        approvedBy: 'user',
+        approvedAt: new Date().toISOString(),
+      },
+    };
+    await expect(tool.execute({ ...raw, query: 'other' }, approved)).rejects.toThrow(
+      'requires approval'
+    );
+    expect(await tool.execute(raw, approved)).toMatchObject({
+      ok: true,
+      output: { scope: 'project:external-api' },
+    });
+    expect(f.run).toHaveBeenCalledTimes(1);
+  });
   it.each(['ready', 'degraded', 'blocked'] as const)(
     'observes %s agent grounding without shell approval or making it a task failure',
     async (status) => {
@@ -201,6 +420,195 @@ describe('Shared scoped Workspace Intelligence retrieval', () => {
     ).toMatchObject({ ok: false });
     expect(f.run).toHaveBeenCalledTimes(calls);
   });
+  it('prepares one bounded task packet for the exact selected project without authorizing edits', async () => {
+    const f = await fixture();
+    f.run.mockResolvedValueOnce({
+      failed: false,
+      exitCode: 0,
+      result: sealedTaskContext({
+        status: 'partial',
+        task: 'Add a focused regression test',
+        scope: {
+          project: 'billing',
+          projectPath: 'renamed-folder',
+          workspace: 'team',
+          binding: 'canonical-project-member',
+        },
+      }),
+    });
+
+    const result = await f.readers.prepareTaskContext({
+      view: 'full',
+      workspacePath: f.workspace,
+      project: 'billing',
+      task: 'Add a focused regression test',
+      path: 'handler.ts',
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      output: {
+        authority: 'installed-workspai-task-context',
+        context: {
+          status: 'partial',
+          scope: { project: 'billing', binding: 'canonical-project-member' },
+        },
+      },
+    });
+    expect(f.run).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cwd: f.project,
+        command: [
+          'agent',
+          'context',
+          '--project',
+          f.project,
+          '--task',
+          'Add a focused regression test',
+          '--for-agent',
+          'generic',
+          '--limit',
+          '8',
+          '--max-bytes',
+          '24576',
+          '--path',
+          'handler.ts',
+        ],
+      })
+    );
+    expect(
+      await f.readers.prepareTaskContext({
+        view: 'full',
+        workspacePath: f.workspace,
+        project: 'billing',
+        task: 'Inspect source',
+        path: '../outside.ts',
+      })
+    ).toMatchObject({ ok: false, error: expect.stringContaining('project-relative') });
+    expect(
+      await f.readers.prepareTaskContext({
+        view: 'full',
+        workspacePath: f.workspace,
+        project: 'billing',
+        task: 'Inspect source',
+        path: 'src\u0000/main.ts',
+      })
+    ).toMatchObject({ ok: false, error: expect.stringContaining('project-relative') });
+  });
+  it('rejects a task context whose payload hash does not match', async () => {
+    const f = await fixture();
+    const packet = sealedTaskContext({
+      status: 'partial',
+      task: 'Inspect source',
+      scope: {
+        project: 'billing',
+        projectPath: 'renamed-folder',
+        workspace: 'team',
+        binding: 'canonical-project-member',
+      },
+    });
+    (packet.integrity as Record<string, unknown>).payloadHash = 'f'.repeat(64);
+    f.run.mockResolvedValueOnce({ failed: false, exitCode: 0, result: packet });
+    expect(
+      await f.readers.prepareTaskContext({
+        view: 'full',
+        workspacePath: f.workspace,
+        project: 'billing',
+        task: 'Inspect source',
+      })
+    ).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('valid project-bound task context'),
+    });
+  });
+  it('accepts explicit path-bound degraded context and typed budget refusal without weakening scope checks', async () => {
+    const f = await fixture();
+    f.run.mockResolvedValueOnce({
+      failed: false,
+      exitCode: 0,
+      result: sealedTaskContext({
+        status: 'partial',
+        task: 'Inspect source',
+        scope: {
+          project: 'renamed-folder',
+          projectPath: '.',
+          workspace: null,
+          binding: 'canonical-project-member',
+        },
+        grounding: { status: 'unavailable' },
+        graph: { status: 'unavailable' },
+      }),
+    });
+    expect(
+      await f.readers.prepareTaskContext({
+        view: 'full',
+        workspacePath: f.workspace,
+        project: 'billing',
+        task: 'Inspect source',
+      })
+    ).toMatchObject({ ok: true, output: { context: { status: 'partial' } } });
+
+    f.run.mockResolvedValueOnce({
+      failed: true,
+      exitCode: 2,
+      result: {
+        schemaVersion: 'workspai.agent-task-context.v1',
+        status: 'insufficient-budget',
+        budget: {
+          maxBytes: 24576,
+          requiredBytes: 25000,
+          accounting: 'utf8-json-with-newline',
+        },
+        message: 'The complete packet does not fit.',
+        nextActions: ['Reduce the Graph limit.'],
+      },
+    });
+    expect(
+      await f.readers.prepareTaskContext({
+        view: 'full',
+        workspacePath: f.workspace,
+        project: 'billing',
+        task: 'Inspect source',
+      })
+    ).toMatchObject({
+      ok: true,
+      output: { summary: expect.stringContaining('no partial context') },
+    });
+  });
+  it.each([0, 2])(
+    'preserves typed project selection recovery at exit %s without substituting parent context',
+    async (exitCode) => {
+      const f = await fixture();
+      const context = {
+        schemaVersion: 'workspai.agent-task-context.v1',
+        status: 'project-selection-required',
+        message: 'Select the nested source project.',
+        nextActions: ['Request the source root.'],
+        recovery: [{ kind: 'request-project-directory', message: 'Select the source root.' }],
+      };
+      f.run.mockResolvedValueOnce({ failed: exitCode !== 0, exitCode, result: context });
+      expect(
+        await f.readers.prepareTaskContext({
+          view: 'full',
+          workspacePath: f.workspace,
+          project: 'billing',
+          task: 'Inspect source',
+        })
+      ).toMatchObject({ ok: true, output: { context } });
+      f.run.mockResolvedValueOnce({
+        failed: false,
+        exitCode: 0,
+        result: { ...context, graph: {} },
+      });
+      expect(
+        await f.readers.prepareTaskContext({
+          view: 'full',
+          workspacePath: f.workspace,
+          project: 'billing',
+          task: 'Inspect source',
+        })
+      ).toMatchObject({ ok: false });
+    }
+  );
   it('uses canonical project identity instead of a renamed directory and retains Graph proof/coverage metadata', async () => {
     const f = await fixture();
     const result = await f.readers.graphSearch({
@@ -409,6 +817,8 @@ describe('Shared scoped Workspace Intelligence retrieval', () => {
       expect(tool.risk).toBe('read');
       expect(registry.get('inspect-project-commands')?.risk).toBe('read');
       expect(registry.get('inspect-project-agent-entry')?.risk).toBe('read');
+      expect(registry.get('prepare-workspai-task-context')?.risk).toBe('read');
+      expect(registry.get('plan-project-lifecycle')?.risk).toBe('read');
       expect(
         await tool.execute(
           { query: 'endpoint', operation: 'entities', limit: 3 },

@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   studioWorkspaceCreationTool,
+  studioProjectCreationTool,
   studioWorkspaceBindingTool,
   validateStudioCreatedWorkspaceTarget,
 } from '../core/studioWorkspaceCreation.js';
@@ -77,6 +78,57 @@ async function approved(f: Awaited<ReturnType<typeof fixture>>) {
   };
 }
 describe('Owned workspace creation', () => {
+  it('creates a sibling in the verified workspace and selects the new project for checks', async () => {
+    const f = await fixture();
+    const workspace = await fs.realpath(f.original);
+    const projectPath = path.join(workspace, 'starter-api');
+    const target = path.join(workspace, 'sports-site');
+    const contract = path.join(workspace, '.workspai/workspace.contract.json');
+    await fs.ensureDir(projectPath);
+    await fs.outputJSON(contract, { projects: [{ name: 'starter-api', path: 'starter-api' }] });
+    const tool = studioProjectCreationTool({
+      async run({ cwd, args }) {
+        expect(cwd).toBe(workspace);
+        expect(args).toEqual([
+          'create',
+          'project',
+          'nextjs',
+          'sports-site',
+          '--skip-install',
+          '--skip-git',
+          '--yes',
+        ]);
+        await fs.outputFile(path.join(target, 'page.tsx'), 'export default function Page() {}\n');
+        await fs.writeJSON(contract, {
+          projects: [
+            { name: 'starter-api', path: 'starter-api' },
+            { name: 'sports-site', path: 'sports-site' },
+          ],
+        });
+        return { exitCode: 0 };
+      },
+    });
+    const request = { name: 'sports-site', kit: 'nextjs' };
+    const context = { ...f.context, projectPath, workspacePath: workspace };
+    const authorization = await tool.authorize!(request, context);
+    expect(authorization.approval?.cwd).toBe(workspace);
+    await expect(tool.execute(request, context)).rejects.toThrow('exact destination');
+    const result = await tool.execute(request, {
+      ...context,
+      approval: {
+        fingerprint: authorization.approval!.fingerprint,
+        approvedBy: 'user',
+        approvedAt: new Date().toISOString(),
+      },
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      executionTarget: { kind: 'project', workspacePath: target },
+      output: { changedPaths: ['page.tsx'], commands: [{ exitCode: 0 }] },
+    });
+    expect(await fs.pathExists(path.join(projectPath, 'sports-site'))).toBe(false);
+    await expect(tool.authorize!(request, context)).rejects.toThrow('already exists');
+  });
   it('explains invalid project directory names before authorization without blaming a valid kit', async () => {
     const f = await fixture();
     const request = {

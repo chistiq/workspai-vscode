@@ -203,10 +203,25 @@ describe('Studio session lifecycle', () => {
         terminalReason: 'model-tool-protocol-exhausted',
       })
     ).toMatchObject({
-      title: 'Model cannot drive tools',
-      summary: expect.stringContaining('tool-capable model'),
+      title: 'Model returned invalid actions',
+      summary: expect.stringContaining('Select another model'),
       terminalReason: 'model-tool-protocol-exhausted',
     });
+  });
+
+  it('renders hard quota separately for current and legacy Copilot sessions', () => {
+    expect(
+      describeStudioTerminalFailure({
+        error: "You've reached your monthly credit limit.",
+      })
+    ).toMatchObject({
+      title: 'Model quota reached',
+      terminalReason: 'ai-provider-quota',
+      connectionFailure: false,
+    });
+    expect(
+      describeStudioTerminalFailure({ error: '429: rate limit; try again in 5 seconds' })
+    ).not.toMatchObject({ terminalReason: 'ai-provider-quota' });
   });
 
   it('presents a typed environment prerequisite as setup work, not a generic pause', () => {

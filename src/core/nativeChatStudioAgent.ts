@@ -1050,7 +1050,11 @@ export async function runNativeChatStudioAgent(input: {
       permissionLevel: 'autopilot',
       workspaceTrusted: vscode.workspace.isTrusted,
       requestToolApproval: (request) =>
-        requestVSCodeStudioToolApproval(request, input.extensionContext.workspaceState),
+        requestVSCodeStudioToolApproval(
+          request,
+          input.extensionContext.workspaceState,
+          () => input.token.isCancellationRequested
+        ),
       requiresVerifiedCompletion: true,
       governedGoal: governedChangeGoal.governedGoal,
       ...(governedChangeGoal.verifiedGoal ? { goal: governedChangeGoal.verifiedGoal } : {}),

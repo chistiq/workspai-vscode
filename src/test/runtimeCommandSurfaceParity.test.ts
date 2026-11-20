@@ -128,17 +128,14 @@ describe('shared runtime command surface contract (extension)', () => {
       'contracts',
       'runtime-command-surface.v1.json'
     );
+    const canonicalRoot = process.env.WORKSPAI_CLI_REPO_PATH;
     const npmContractPath = path.resolve(
-      repoRoot,
-      '..',
-      'workspai',
-      'packages',
-      'cli',
+      canonicalRoot || path.resolve(repoRoot, '..', 'workspai', 'packages', 'cli'),
       'contracts',
       'runtime-command-surface.v1.json'
     );
 
-    if (!fs.existsSync(npmContractPath)) {
+    if (!canonicalRoot && !fs.existsSync(npmContractPath)) {
       return;
     }
 

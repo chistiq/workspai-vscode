@@ -1,7 +1,7 @@
 # Day 6 Patch Candidate Diff/Stat and Regression Impact Note
 
 Generated at: 2026-05-13T00:00:00Z (local)
-Repository: rapidkitlabs/rapidkit-vscode
+Repository: chistiq/workspai-vscode
 Candidate: v0.28.1-rc (stabilization)
 
 ## Diff Summary

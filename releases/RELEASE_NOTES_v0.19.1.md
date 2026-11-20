@@ -56,6 +56,6 @@ The result is more reliable doctor/setup flows, more accurate Go guidance, and c
 ## Links
 
 - 📦 [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode)
-- 🐙 [GitHub Repository](https://github.com/chistiq/rapidkit-vscode)
+- 🐙 [GitHub Repository](https://github.com/chistiq/workspai-vscode)
 - 🌐 [Workspai Website](https://www.workspai.com/)
 - 🚀 [RapidKit CLI (npm)](https://www.npmjs.com/package/rapidkit)

@@ -3,6 +3,7 @@ import {
   renderStudioImplementationPlan,
   type StudioImplementationPlan,
 } from './studioImplementationPlan.js';
+import { isAIProviderQuotaExhausted } from '../contracts/aiProviderQuota.js';
 import { parseAttachedImages, type AIImageContent } from './aiImageContent.js';
 import crypto from 'node:crypto';
 import path from 'node:path';
@@ -72,6 +73,8 @@ export type StudioAgentModelContext = {
     risk: string;
   }>;
   latestObservation?: StudioAgentToolResult;
+  /** Retry a rejected model response without replacing the last real tool observation. */
+  toolProtocolRecovery?: { attempt: number; transport: 'native' | 'json' };
   /** Model-facing schema discovery; the execution registry remains complete. */
   deferredToolNames?: string[];
   /** Reserve the final read-only decision for an answer from collected evidence. */
@@ -1354,6 +1357,12 @@ export class StudioAgentSession {
                   consecutiveModelDecisionsWithoutSemanticProgress >=
                     Math.min(4, Math.max(1, modelDecisionLimit - 1))
               );
+        if (modelContextForTurn && consecutiveProtocolMisses) {
+          modelContextForTurn.toolProtocolRecovery = {
+            attempt: consecutiveProtocolMisses,
+            transport: this.state.lastResolvedModel?.toolTransport ?? 'native',
+          };
+        }
         if (
           modelContextForTurn &&
           readOnlyTurnBudget !== undefined &&
@@ -1581,18 +1590,26 @@ export class StudioAgentSession {
         } else if (action.type === 'message') {
           consecutiveProtocolMisses += 1;
           this.budgetLedger().totalProtocolMisses += 1;
-          await this.emit('model.message', { text: action.text, protocolMiss: true }, requestId);
+          const transport = this.state.lastResolvedModel?.toolTransport ?? 'native';
+          await this.emit(
+            'model.message',
+            {
+              protocolMiss: true,
+              transport,
+              attempt: consecutiveProtocolMisses,
+              text:
+                consecutiveProtocolMisses < 3
+                  ? 'The model returned an invalid action. Retrying from the last tool result.'
+                  : 'The model returned an invalid action. No tool was dispatched.',
+            },
+            requestId
+          );
           if (consecutiveProtocolMisses >= 3) {
             throw new StudioAgentTerminalError(
-              'Selected model did not produce a valid native Studio tool call after 3 attempts. Switch to a tool-capable model, then resume this session. The task was not marked complete.',
+              `The model did not return a valid Studio action after 3 attempts (last transport: ${transport}). No action from the invalid responses was executed. Select another model and continue this session.`,
               'model-tool-protocol-exhausted'
             );
           }
-          latestObservation = {
-            ok: false,
-            error:
-              'The session is still active. Select a governed tool, request user input through the structured input action, or complete only after the mode contract is satisfied.',
-          };
         } else if (action.type === 'complete') {
           if (action.review) {
             this.state.requirementReview = structuredClone(action.review);
@@ -2471,6 +2488,10 @@ export class StudioAgentSession {
       const message = error instanceof Error ? error.message : String(error);
       const providerTimeout = /AI model request timed out|AI tool request timed out/i.test(message);
       const providerFailure = isAiProviderFailure(message);
+      const providerQuota = isAIProviderQuotaExhausted(error);
+      const terminalMessage = providerQuota
+        ? 'The AI provider reached its usage quota. Select another model or wait for the quota to reset, then continue this session.'
+        : message;
       const terminalObservationOutput = latestObservation
         ? toolOutputRecord(latestObservation)
         : undefined;
@@ -2486,13 +2507,14 @@ export class StudioAgentSession {
       await this.emit(
         'session.failed',
         {
-          error: message,
-          answer: buildStudioIncompleteAnswer(this.state, { reason: message }),
+          error: terminalMessage,
+          answer: buildStudioIncompleteAnswer(this.state, { reason: terminalMessage }),
           ...(executionMode === 'ask' || executionMode === 'plan'
             ? { terminalReason: 'question-incomplete' }
             : {}),
           ...(providerFailure ? { terminalReason: 'ai-provider-unavailable' } : {}),
           ...(providerTimeout ? { terminalReason: 'ai-provider-timeout' } : {}),
+          ...(providerQuota ? { terminalReason: 'ai-provider-quota' } : {}),
           ...(missingExecutable ? { missingExecutable } : {}),
           ...(repairTransactionState ? { repairTransactionState } : {}),
           ...(error instanceof StudioAgentReviewRequiredError ||
@@ -2603,6 +2625,9 @@ export class StudioAgentSession {
                 decisionId,
                 durationMs: Date.now() - startedAt,
                 outcome: 'failed',
+                ...(isAIProviderQuotaExhausted(error)
+                  ? { terminalReason: 'ai-provider-quota' }
+                  : {}),
               },
               requestId
             );
@@ -2991,6 +3016,15 @@ export class StudioAgentSession {
           'A governed scope cannot be replaced by another execution target. Continue within the pinned Goal scope.'
         );
       }
+      if (
+        tool.name === 'create-project-in-workspace' &&
+        this.state.executionPolicy?.workspaceIntent === 'create-new' &&
+        !this.state.executionTarget
+      ) {
+        throw new Error(
+          'The request requires a separate workspace. Use create-workspace before creating projects.'
+        );
+      }
       if (this.state.executionTarget && !tool.scopeIndependent) {
         if (
           this.state.executionAuthority !== 'workspace' ||
@@ -3311,6 +3345,7 @@ export class StudioAgentSession {
         'delegate-isolated-tasks',
         'integrate-isolated-task',
         'create-workspace',
+        'create-project-in-workspace',
         'bind-workspace',
         'select-project',
         'onboard-project',

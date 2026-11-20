@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildAssistantPlanAgentHandoff,
+  completedAssistantPlan,
   parseAssistantExecutionPolicy,
   resolveAssistantExecutionPolicy,
 } from '../core/assistantExecutionPolicy.js';
+import type { StudioAgentPersistedSession } from '../core/studioAgentEvents.js';
 
 describe('Assistant execution policy', () => {
   it.each([
@@ -105,5 +107,29 @@ describe('Assistant execution policy', () => {
     expect(handoff).toContain('Add caching to the API');
     expect(handoff).toContain('Run API tests');
     expect(handoff).toContain('re-inspect relevant evidence and source before mutation');
+  });
+
+  it('rejects stale or incomplete plan handoffs regardless of a supplied plan title', () => {
+    const plan = {
+      status: 'completed',
+      assistantMode: 'plan',
+      executionPolicy: { profile: 'implementation-plan' },
+      events: [
+        { type: 'request.started', requestId: 'one', data: { request: 'Fix the parser' } },
+        { type: 'session.completed', requestId: 'one', data: { summary: 'Inspect parser tests' } },
+      ],
+    } as StudioAgentPersistedSession;
+    expect(completedAssistantPlan(plan, 'one')).toContain('Inspect parser tests');
+    expect(completedAssistantPlan(plan, 'other')).toBeUndefined();
+    expect(completedAssistantPlan({ ...plan, status: 'cancelled' }, 'one')).toBeUndefined();
+    expect(
+      completedAssistantPlan(
+        {
+          ...plan,
+          events: [...plan.events, { ...plan.events[0], requestId: 'two' }],
+        },
+        'one'
+      )
+    ).toBeUndefined();
   });
 });

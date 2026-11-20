@@ -119,6 +119,13 @@ export const NPM_CONTRACT_SUPPORT_MATRIX: NpmContractSupportEntry[] = [
       'Reads canonical mirror operation results for status, verification, and repair feedback.',
   },
   {
+    contractPath: 'project-lifecycle-context.v1.json',
+    mode: 'runtime-consumed',
+    extensionSurface: 'Task-scoped agent context and nearest runtime-unit checks',
+    usage:
+      'Carries manifest-derived lifecycle commands and evidence for the closest runtime unit without claiming that any check ran.',
+  },
+  {
     contractPath: 'transparency-evidence.v1.json',
     mode: 'schema-guarded',
     extensionSurface: 'Evidence provenance and transparent decision boundary',
@@ -143,6 +150,13 @@ export const NPM_CONTRACT_SUPPORT_MATRIX: NpmContractSupportEntry[] = [
     extensionSurface: 'Agent evaluation event boundary',
     usage:
       'Guards provider/tokenizer provenance events aggregated by workspace evaluation reports.',
+  },
+  {
+    contractPath: 'workspace-intelligence/workspace-graph-search-view.v1.json',
+    mode: 'evidence-consumed',
+    extensionSurface: 'Task-scoped Graph discovery inside compact context packets',
+    usage:
+      'Carries ranked, bounded Graph matches, provenance and omission counts while leaving source inspection and completion claims to the agent.',
   },
   {
     contractPath: 'workspace-intelligence/workspace-graph-token-efficiency.v1.json',
@@ -503,9 +517,30 @@ export const NPM_CONTRACT_SUPPORT_MATRIX: NpmContractSupportEntry[] = [
   {
     contractPath: 'workspace-intelligence/agent-bootstrap-receipt.v1.json',
     mode: 'runtime-consumed',
-    extensionSurface: 'Per-session project grounding preflight and mutation gate',
+    extensionSurface: 'Per-session project grounding preflight and evidence boundary',
     usage:
-      'Runs the CLI-owned agent bootstrap, validates its portable receipt, grounds read-only prompts, and fail-closes governed source mutation unless canonical evidence is ready.',
+      'Runs the CLI-owned agent bootstrap and validates its portable receipt; evidence status constrains claims while mutation governance remains proportional to project policy and change scope.',
+  },
+  {
+    contractPath: 'workspace-intelligence/agent-bootstrap-view.v1.json',
+    mode: 'evidence-consumed',
+    extensionSurface: 'Compact per-task project grounding in native Assistant sessions',
+    usage:
+      'Transports bounded bootstrap evidence and its omissions inside the task context packet without treating readiness as proof that the model followed it.',
+  },
+  {
+    contractPath: 'workspace-intelligence/agent-task-context.v1.json',
+    mode: 'runtime-consumed',
+    extensionSurface: 'Read-only task context tool in native Assistant modes',
+    usage:
+      'Checks task identity, exact project scope, portable paths, packet status and budget outcome before exposing canonical Workspai context to the model.',
+  },
+  {
+    contractPath: 'workspace-intelligence/agent-task-route.v1.json',
+    mode: 'runtime-consumed',
+    extensionSurface: 'Default compact task route in Workspai Assistant',
+    usage:
+      'Validates the CLI route, selected project, byte budget and integrity before exposing scoped discovery and verification suggestions.',
   },
   {
     contractPath: 'workspace-intelligence/agent-reports-index.v1.json',

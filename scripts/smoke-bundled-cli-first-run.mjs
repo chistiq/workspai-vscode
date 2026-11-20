@@ -78,11 +78,9 @@ try {
   if (terminalProbe.status !== 0 || !terminalProbe.stdout.includes(manifest.cli.version)) {
     fail('Bundled Workspai terminal launcher could not execute the verified CLI.', terminalProbe);
   }
-  const result = spawnSync(
-    process.execPath,
-    [entry, 'create', 'workspace', workspaceName, '--profile', 'minimal', '--yes', '--skip-git'],
-    {
-      cwd: tempRoot,
+  const runBundled = (cwd, args) =>
+    spawnSync(process.execPath, [entry, ...args], {
+      cwd,
       encoding: 'utf8',
       timeout: 60_000,
       env: {
@@ -92,8 +90,16 @@ try {
         ELECTRON_RUN_AS_NODE: '1',
         WORKSPAI_EXTENSION_RUNTIME: '1',
       },
-    }
-  );
+    });
+  const result = runBundled(tempRoot, [
+    'create',
+    'workspace',
+    workspaceName,
+    '--profile',
+    'minimal',
+    '--yes',
+    '--skip-git',
+  ]);
   // Some managed process hosts can report a post-exit EPERM while still
   // returning an authoritative zero child status. A missing/failed launch has
   // a null or non-zero status, so the exit status remains the portable gate.
@@ -124,9 +130,63 @@ try {
     fail('First-run creation unexpectedly invoked the npm npx cache.', result);
   }
 
+  const source = path.join(tempRoot, 'standalone');
+  fs.mkdirSync(source);
+  fs.writeFileSync(
+    path.join(source, 'package.json'),
+    JSON.stringify({ name: 'standalone', scripts: { test: 'node --test' } })
+  );
+  fs.writeFileSync(path.join(source, 'size.test.js'), '');
+  const routeResult = runBundled(source, [
+    'agent',
+    'context',
+    '--project',
+    source,
+    '--task',
+    'Run the size test',
+    '--path',
+    'size.test.js',
+    '--view',
+    'route',
+    '--strict',
+  ]);
+  if (routeResult.status !== 0) fail('Bundled CLI could not produce a task route.', routeResult);
+  const route = JSON.parse(routeResult.stdout);
+  if (
+    route.schemaVersion !== 'workspai.agent-task-route.v1' ||
+    route.scope?.binding !== 'not-workspai-managed' ||
+    route.execution?.projectRoot?.relativePath !== '.' ||
+    !route.actions?.some((action) => action.id === 'lifecycle.test')
+  ) {
+    fail('Bundled CLI returned an invalid project task route.', routeResult);
+  }
+  const planResult = runBundled(source, [
+    'project',
+    'lifecycle',
+    'plan',
+    '--project',
+    source,
+    '--path',
+    'size.test.js',
+    '--strict',
+    '--json',
+  ]);
+  if (planResult.status !== 0)
+    fail('Bundled CLI could not produce a strict lifecycle plan.', planResult);
+  const plan = JSON.parse(planResult.stdout);
+  if (
+    plan.schemaVersion !== 'workspai.project-lifecycle-context.v1' ||
+    plan.status !== 'ready' ||
+    plan.selection?.path !== 'size.test.js'
+  ) {
+    fail('Bundled CLI returned an invalid project lifecycle plan.', planResult);
+  }
+
   console.log(
     `Bundled CLI first-run smoke passed: ${JSON.stringify({
       cliVersion: manifest.cli.version,
+      taskRouteVerified: true,
+      lifecyclePlanVerified: true,
       workspaceCreated: true,
       canonicalArtifacts: requiredArtifacts.length,
       npmRunnerUsed: false,

@@ -289,9 +289,9 @@ Looking ahead to v0.10.0:
 
 ## 👥 Community
 
-- **GitHub:** [rapidkitlabs/rapidkit-vscode](https://github.com/chistiq/rapidkit-vscode)
-- **Issues:** [Report bugs](https://github.com/chistiq/rapidkit-vscode/issues)
-- **Discussions:** [Ask questions](https://github.com/chistiq/rapidkit-vscode/discussions)
+- **GitHub:** [chistiq/workspai-vscode](https://github.com/chistiq/workspai-vscode)
+- **Issues:** [Report bugs](https://github.com/chistiq/workspai-vscode/issues)
+- **Discussions:** [Ask questions](https://github.com/chistiq/workspai-vscode/discussions)
 - **Website:** [www.workspai.com](https://www.workspai.com)
 
 ---

@@ -29,7 +29,9 @@ describe('native Chat and Incident Studio orchestration parity', () => {
     expect(nativeAgent).toContain('executeCliOwnedPatchRepair({');
     expect(nativeAgent).toContain("approvedBy: 'vscode:native-chat-agent'");
     expect(nativeAgent).toContain('executeStudioWorkspaceCommandTransaction({');
-    expect(nativeAgent).toContain('requestVSCodeStudioToolApproval(request,');
+    expect(nativeAgent).toMatch(
+      /requestVSCodeStudioToolApproval\(\s*request,\s*input\.extensionContext\.workspaceState,\s*\(\) => input\.token\.isCancellationRequested/
+    );
     expect(nativeAgent).not.toContain('workspace.fs.writeFile');
   });
 

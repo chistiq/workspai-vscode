@@ -54,6 +54,6 @@ Responses now appear token-by-token in real time, a thinking indicator covers th
 ## Links
 
 - 📦 [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode)
-- 🐙 [GitHub Repository](https://github.com/chistiq/rapidkit-vscode)
+- 🐙 [GitHub Repository](https://github.com/chistiq/workspai-vscode)
 - 🌐 [Workspai Website](https://www.workspai.com/)
 - 🚀 [RapidKit CLI (npm)](https://www.npmjs.com/package/rapidkit)

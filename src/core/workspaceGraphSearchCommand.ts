@@ -5,6 +5,7 @@ export function buildWorkspaceGraphSearchCommand(input: {
   limit?: number;
   operation?: 'search' | 'entities' | 'evidence' | 'path';
   target?: string;
+  expectedGraphHash?: string;
 }): string[] {
   const operation = input.operation ?? 'search';
   const command = ['workspace', 'graph', operation];
@@ -25,6 +26,9 @@ export function buildWorkspaceGraphSearchCommand(input: {
   }
   if (input.scope?.trim()) {
     command.push('--scope', input.scope.trim());
+  }
+  if (input.expectedGraphHash) {
+    command.push('--expected-graph-hash', input.expectedGraphHash);
   }
   command.push('--json');
   return command;

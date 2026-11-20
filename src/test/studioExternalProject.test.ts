@@ -31,7 +31,9 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => fs.remove(root)));
 });
 async function fixture() {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'studio-external-project-'));
+  const root = await fs.realpath(
+    await fs.mkdtemp(path.join(os.tmpdir(), 'studio-external-project-'))
+  );
   roots.push(root);
   const ideRoot = path.join(root, 'InWork');
   const selected = path.join(root, 'selected-workspace');
@@ -162,6 +164,54 @@ async function approve(
 }
 
 describe('External project resolution independent of Workspai membership', () => {
+  it('previews explicit stale-binding recovery and delegates recreation to one approved adopt', async () => {
+    const f = await fixture();
+    const source = await fs.realpath(f.source);
+    const workspace = path.join(
+      await fs.realpath(f.root),
+      'user-home/.workspai/workspaces/workspai'
+    );
+    const name = 'knowledge-catalog';
+    await registered(workspace, source, name, 'adopted');
+    await fs.remove(workspace);
+    const run = vi.fn(async ({ args }: { args: string[] }) => {
+      const dryRun = args.includes('--dry-run');
+      if (!dryRun) await registered(workspace, source, name, 'adopted');
+      return {
+        exitCode: 0,
+        stdout: JSON.stringify({
+          dryRun,
+          workspacePath: workspace,
+          wouldCreateDefaultWorkspace: dryRun,
+          adoptedProject: { name, path: source },
+          plan: {
+            schemaVersion: 'workspai.ingestion-plan.v1',
+            action: 'adopt-project',
+            mode: 'link',
+            source,
+            targetWorkspace: workspace,
+            destination: source,
+          },
+        }),
+      };
+    });
+    const tool = studioProjectOnboardingTool({ home: f.home, run });
+    const context = { ...f.context, workspacePath: source };
+    await expect(tool.authorize!({ operation: 'adopt' }, context)).rejects.toThrow(
+      'Resolve existing Workspai ownership'
+    );
+    expect(run).not.toHaveBeenCalled();
+    const raw = { operation: 'adopt', offer: false };
+    const approved = await approve(tool, raw, context);
+    expect(await fs.pathExists(workspace)).toBe(false);
+    expect(await tool.execute(raw, approved)).toMatchObject({ ok: true });
+    expect(run.mock.calls.map(([call]) => call.args)).toEqual([
+      ['adopt', source, '--json', '--dry-run'],
+      ['adopt', source, '--json', '--dry-run'],
+      ['adopt', source, '--json'],
+    ]);
+  });
+
   it('resolves a pasted shell prompt as an explicitly requested source without another selection approval', async () => {
     const f = await fixture();
     const paths = collectAssistantUserPaths('InWork/Reference/knowledge-catalog$ make dev-setup');

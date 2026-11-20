@@ -1,6 +1,6 @@
 # Workspai UI surface guide
 
-> Extension 0.50.0 · Workspai CLI 0.80.0+
+> Extension 0.51.0 · Workspai CLI 0.80.0+
 
 This guide documents the current user-facing surfaces. It is a review aid for
 maintainers; it is not a second command reference.

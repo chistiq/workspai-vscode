@@ -421,6 +421,16 @@ body {
   padding-right: 2px;
 }
 
+.ws-sidebar__stream-content {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  gap: inherit;
+  min-width: 0;
+  margin-inline: auto;
+  width: min(100%, 760px);
+}
+
 .ws-sidebar__msg {
   display: flex;
   align-items: flex-start;

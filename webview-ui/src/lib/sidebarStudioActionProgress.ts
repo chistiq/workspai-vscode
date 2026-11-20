@@ -139,6 +139,11 @@ const STUDIO_AGENT_TOOL_LABELS: Record<
     completed: 'Created workspace and projects',
     failed: 'Workspace creation needs attention',
   },
+  'create-project-in-workspace': {
+    running: 'Scaffolding in the selected workspace',
+    completed: 'Created and selected the project',
+    failed: 'Project creation needs attention',
+  },
   'start-terminal': {
     running: 'Starting command',
     completed: 'Command started',

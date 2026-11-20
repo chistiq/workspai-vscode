@@ -205,8 +205,8 @@ npx rapidkit dev  # Works! ✅
 
 We'd love to hear your thoughts!
 
-- 🐛 **Bug Reports:** [GitHub Issues](https://github.com/chistiq/rapidkit-vscode/issues)
-- 💡 **Feature Requests:** [Discussions](https://github.com/chistiq/rapidkit-vscode/discussions)
+- 🐛 **Bug Reports:** [GitHub Issues](https://github.com/chistiq/workspai-vscode/issues)
+- 💡 **Feature Requests:** [Discussions](https://github.com/chistiq/workspai-vscode/discussions)
 - 📧 **Email:** support@rapidkitlabs.com
 
 ---

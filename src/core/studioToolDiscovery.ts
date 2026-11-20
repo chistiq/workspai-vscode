@@ -11,6 +11,8 @@ const CORE = new Set([
   'inspect-workspace',
   'select-project',
   'onboard-project',
+  'create-workspace',
+  'create-project-in-workspace',
   'inspect-source',
   'inspect-workspace-batch',
   'discover-workspace-files',
@@ -25,6 +27,8 @@ const CORE = new Set([
   'verify-goal',
   'inspect-cli-commands',
   'inspect-project-agent-entry',
+  'prepare-workspai-task-context',
+  'plan-project-lifecycle',
   'update-task-ledger',
 ]);
 const tokenize = (text: string): string[] =>

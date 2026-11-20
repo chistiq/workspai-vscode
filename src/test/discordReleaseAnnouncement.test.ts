@@ -62,7 +62,7 @@ describe('Workspai VS Code Discord release contract', () => {
 
     expect(embed.title).toBe(`🚀 Workspai VS Code v${PACKAGE_VERSION} is here`);
     expect(embed.url).toBe(
-      `https://github.com/chistiq/rapidkit-vscode/releases/tag/${RELEASE_TAG}`
+      `https://github.com/chistiq/workspai-vscode/releases/tag/${RELEASE_TAG}`
     );
     expect(embed.fields[0].value).toContain(`${firstHighlight.icon} ${firstHighlight.text}`);
     expect(embed.fields[1].value).toBe(

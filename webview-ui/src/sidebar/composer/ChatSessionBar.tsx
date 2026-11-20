@@ -70,7 +70,7 @@ export function ChatSessionBar({
   const title = activeSession?.title ?? 'New conversation';
   const status = statusText === undefined ? sessionStatusLabel(activeSession) : statusText;
   const context = activeSession?.executionTarget
-    ? `${activeSession.executionTarget.name} · Selected workspace`
+    ? `${activeSession.executionTarget.name} · ${activeSession.executionTarget.ref.startsWith('project-') ? 'Selected project' : 'Selected workspace'}`
     : contextText === undefined
       ? activeSession?.incident || activeSession?.scope || activeSession?.editorIssue
         ? chatSessionContextLabel(activeSession)

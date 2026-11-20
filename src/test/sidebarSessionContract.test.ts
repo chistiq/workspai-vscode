@@ -99,7 +99,7 @@ describe('Workspai chat session contract', () => {
     expect(provider).toContain('resolveEditorIssueContext(payloadRecord.editorIssue)');
     expect(provider).toContain('scopeMode: payloadRecord.scopeMode');
     expect(provider).toMatch(
-      /const autonomousWorkspacePath =\s*handoff\?\.workspacePath \?\?\s*aiContext\.workspaceRootPath \?\?\s*vscode\.workspace\.workspaceFolders/
+      /const autonomousWorkspacePath =\s*planOrigin\?\.workspacePath \?\?\s*handoff\?\.workspacePath \?\?\s*aiContext\.workspaceRootPath \?\?\s*vscode\.workspace\.workspaceFolders/
     );
     expect(secondary).toContain("if (data.scopeMode !== 'none')");
     expect(provider).toContain('const isEditorIssueHandoff');

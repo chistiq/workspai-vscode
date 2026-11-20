@@ -1,7 +1,7 @@
 import surface from '../../contracts/runtime-command-surface.v1.json';
 
 export const STUDIO_INTELLIGENCE_USAGE_HINT =
-  'Use Workspai intelligence when it helps: bounded project context or query-workspace-graph can locate owners, dependencies, tests and proofs before broad scans. Choose search/entities/evidence/path and project/workspace scope from the question. Preserve freshness, source hash, omitted counts and proof links; absence is not independence. Read current source before edits. inspect-project-commands reports effective Core/runtime support. Missing intelligence is not a setup requirement: use source/LSP/terminal/host tools. Run the full chain only for a relevant health/readiness/verification objective; retrieval alone is not completion.';
+  'For a concrete project change, use prepare-workspai-task-context once early with the known project-relative path. Read recovery on selection or budget refusal. Inspect live source, reuse lifecycle.test or call plan-project-lifecycle for a new path, and expand Graph IDs with query-workspace-graph and the supplied revision. If Graph is needed and access is blocked, ask for the exact Workspai workspace and use canonicalWorkspace for a scoped approval. Continue native search when unavailable. Use full context for additional grounding or Skills. Resolve paths from the selected source root and use the existing selection and approval flow. Run the relevant check after the last edit and report its observed result.';
 
 export const STUDIO_INTELLIGENCE_KNOWLEDGE = {
   reference:
@@ -31,6 +31,16 @@ export const STUDIO_INTELLIGENCE_KNOWLEDGE = {
     },
   ],
   retrieval: [
+    {
+      need: 'First actions for a project change',
+      tool: 'prepare-workspai-task-context',
+      scope: 'Exact source project and an optional known relative path.',
+    },
+    {
+      need: 'Closest manifest-backed verification for a newly discovered path',
+      tool: 'plan-project-lifecycle',
+      scope: 'Existing source or test path inside the selected project.',
+    },
     {
       need: 'Owners, dependencies, tests, architecture boundaries',
       tool: 'query-workspace-graph',

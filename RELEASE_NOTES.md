@@ -1,5 +1,30 @@
 # Release Notes
 
+## v0.51.0 (November 20, 2026)
+
+### Focused project guidance, grounded in Workspai CLI 0.82.0
+
+Published November 20, 2026.
+
+This release is validated against Workspai CLI 0.82.0.
+
+- Start with a compact, project-bound source and verification route.
+- Look up the closest manifest-backed check for a newly identified path.
+- Expand Graph evidence against the same revision and project scope.
+- Run Agent from the latest completed Plan in its verified source scope.
+- Keep chat drafts scoped and follow tool results and approval waits.
+- Create a project at the verified workspace root with approval for the exact
+  destination. Continue implementation and checks in the newly selected project.
+- Recover invalid model responses from the last tool result and identify quota
+  exhaustion, commands blocked before execution, and process failures in activity.
+- Keep source inspection and project-native checks available when Workspai
+  evidence, workspace access, or task routing is unavailable.
+
+VS Code 1.106.0 or newer and Workspai CLI 0.80.0+ are supported. Compact
+task routing requires a CLI that supports the route view.
+
+[Full release notes](https://github.com/chistiq/workspai-vscode/blob/main/releases/RELEASE_NOTES_v0.51.0.md)
+
 ## v0.50.0 (November 7, 2026)
 
 ### Better context, less repetition, clearer outcomes
@@ -9,6 +34,9 @@ This release is validated against Workspai CLI 0.80.0.
 - Retrieve bounded code context through source, Graph and installed language
   providers. Optionally enable incremental semantic search with a local or
   configured API embedding provider in User Settings.
+- Prepare read-only, task-specific Workspai context for the exact selected
+  project when supported by the installed CLI, validating scope, payload hash
+  and byte budget. Missing or unsupported context falls back to native tools.
 - Delegate independent edits to private source forks, then review and integrate
   proposals through the parent request's protected transactions and checkpoint.
 - Preview native inline suggestions and optional current-line replacements;
@@ -34,7 +62,7 @@ proposals use the reviewed command. Reported checks define verification coverage
 registration, a successful tool or **Response ready** alone does not prove the
 entire application or a workflow was tested.
 
-[Full release notes](https://github.com/chistiq/rapidkit-vscode/blob/main/releases/RELEASE_NOTES_v0.50.0.md)
+[Full release notes](https://github.com/chistiq/workspai-vscode/blob/main/releases/RELEASE_NOTES_v0.50.0.md)
 
 ## v0.49.1 (November 3, 2026)
 
@@ -55,7 +83,7 @@ VS Code 1.106.0 or newer and Workspai CLI 0.80.0+ are required. The verified run
 remains 0.80.0. Scaffolding does not imply that implementation, build, or tests are
 complete; Continue in Agent can perform the remaining work and applicable checks.
 
-[Full release notes](https://github.com/chistiq/rapidkit-vscode/blob/main/releases/RELEASE_NOTES_v0.49.1.md)
+[Full release notes](https://github.com/chistiq/workspai-vscode/blob/main/releases/RELEASE_NOTES_v0.49.1.md)
 
 ## v0.49.0 (November 2, 2026)
 
@@ -84,7 +112,7 @@ The extension downloads and integrity-checks the pinned official
 VS Code 1.106.0 or newer and Workspai CLI 0.80.0+ are required. Model, tool, language-runtime, and host
 availability affect individual capabilities. Next Edit is a user-triggered preview.
 
-[Full release notes](https://github.com/chistiq/rapidkit-vscode/blob/main/releases/RELEASE_NOTES_v0.49.0.md)
+[Full release notes](https://github.com/chistiq/workspai-vscode/blob/main/releases/RELEASE_NOTES_v0.49.0.md)
 
 ## v0.48.0 (September 22, 2026)
 
@@ -127,7 +155,7 @@ Compatibility:
 - Git for remote repository analysis
 - RapidKit Core 0.6.0 only for Python-backed kits/modules
 
-[Full Release Notes](https://github.com/chistiq/rapidkit-vscode/blob/v0.48.0/releases/RELEASE_NOTES_v0.48.0.md)
+[Full Release Notes](https://github.com/chistiq/workspai-vscode/blob/v0.48.0/releases/RELEASE_NOTES_v0.48.0.md)
 
 ## v0.47.1 (September 7, 2026)
 
@@ -166,7 +194,7 @@ Compatibility:
 - Git for remote repository analysis
 - RapidKit Core 0.6.0 only for Python-backed kits/modules
 
-[Full Release Notes](https://github.com/chistiq/rapidkit-vscode/blob/v0.47.1/releases/RELEASE_NOTES_v0.47.1.md)
+[Full Release Notes](https://github.com/chistiq/workspai-vscode/blob/v0.47.1/releases/RELEASE_NOTES_v0.47.1.md)
 
 Release posture: `stability-patch`.
 
@@ -235,7 +263,7 @@ Compatibility:
 - Git for remote repository analysis
 - RapidKit Core 0.6.0 only for Python-backed kits/modules
 
-[Full Release Notes](https://github.com/chistiq/rapidkit-vscode/blob/v0.47.0/releases/RELEASE_NOTES_v0.47.0.md)
+[Full Release Notes](https://github.com/chistiq/workspai-vscode/blob/v0.47.0/releases/RELEASE_NOTES_v0.47.0.md)
 
 Release posture: `expansion-eligible`.
 
@@ -308,7 +336,7 @@ Compatibility:
 - Workspai CLI 0.72.0+
 - RapidKit Core 0.6.0 only for Python-backed kits/modules
 
-[Full Release Notes](https://github.com/chistiq/rapidkit-vscode/blob/v0.46.0/releases/RELEASE_NOTES_v0.46.0.md)
+[Full Release Notes](https://github.com/chistiq/workspai-vscode/blob/v0.46.0/releases/RELEASE_NOTES_v0.46.0.md)
 
 Release posture: `proof-carrying-studio-and-live-assurance`
 
@@ -397,7 +425,7 @@ Compatibility:
 - Workspai CLI 0.67.0+
 - RapidKit Core 0.6.0 only for Python-backed kits/modules
 
-[Full Release Notes](https://github.com/chistiq/rapidkit-vscode/blob/v0.45.0/releases/RELEASE_NOTES_v0.45.0.md)
+[Full Release Notes](https://github.com/chistiq/workspai-vscode/blob/v0.45.0/releases/RELEASE_NOTES_v0.45.0.md)
 
 Release posture: `portable-project-intelligence-and-agent-operations`
 
@@ -442,7 +470,7 @@ Compatibility:
 - Workspai CLI 0.64.0+
 - RapidKit Core 0.6.0 only for Python-backed kits/modules
 
-[Full Release Notes](https://github.com/chistiq/rapidkit-vscode/blob/v0.44.0/releases/RELEASE_NOTES_v0.44.0.md)
+[Full Release Notes](https://github.com/chistiq/workspai-vscode/blob/v0.44.0/releases/RELEASE_NOTES_v0.44.0.md)
 
 Release posture: `governed-repair-and-immersive-graph-intelligence`
 
@@ -494,7 +522,7 @@ Compatibility:
 - Workspai CLI 0.64.0+
 - RapidKit Core 0.6.0 only for Python-backed kits/modules
 
-[Full Release Notes](https://github.com/chistiq/rapidkit-vscode/blob/v0.43.0/releases/RELEASE_NOTES_v0.43.0.md)
+[Full Release Notes](https://github.com/chistiq/workspai-vscode/blob/v0.43.0/releases/RELEASE_NOTES_v0.43.0.md)
 
 Release posture: `conversational-create-and-embedded-cli-authority`
 
@@ -535,7 +563,7 @@ Compatibility:
 - Workspai CLI 0.63.0+
 - RapidKit Core 0.6.0 only for Python-backed kits/modules
 
-[Full Release Notes](https://github.com/chistiq/rapidkit-vscode/blob/v0.42.0/releases/RELEASE_NOTES_v0.42.0.md)
+[Full Release Notes](https://github.com/chistiq/workspai-vscode/blob/v0.42.0/releases/RELEASE_NOTES_v0.42.0.md)
 
 Release posture: `intent-aware-governed-agent-and-causal-repair-queue`
 
@@ -575,7 +603,7 @@ Compatibility:
 - Workspai CLI 0.61.0+
 - RapidKit Core 0.6.0 only for Python-backed kits/modules
 
-[Full Release Notes](https://github.com/chistiq/rapidkit-vscode/blob/v0.41.0/releases/RELEASE_NOTES_v0.41.0.md)
+[Full Release Notes](https://github.com/chistiq/workspai-vscode/blob/v0.41.0/releases/RELEASE_NOTES_v0.41.0.md)
 
 Release posture: `intent-first-agent-preflight-and-enriched-repair-loop`
 
@@ -616,7 +644,7 @@ Compatibility:
 - Workspai CLI 0.60.0+
 - RapidKit Core 0.6.0 only for Python-backed kits/modules
 
-[Full Release Notes](https://github.com/chistiq/rapidkit-vscode/blob/v0.40.0/releases/RELEASE_NOTES_v0.40.0.md)
+[Full Release Notes](https://github.com/chistiq/workspai-vscode/blob/v0.40.0/releases/RELEASE_NOTES_v0.40.0.md)
 
 Release posture: `governed-goals-and-canonical-agent-entry`
 
@@ -683,7 +711,7 @@ Compatibility:
 - Workspai CLI 0.56.0+
 - RapidKit Core 0.6.0 only for Python-backed kits/modules
 
-[Full Release Notes](https://github.com/chistiq/rapidkit-vscode/blob/v0.39.0/releases/RELEASE_NOTES_v0.39.0.md)
+[Full Release Notes](https://github.com/chistiq/workspai-vscode/blob/v0.39.0/releases/RELEASE_NOTES_v0.39.0.md)
 
 Release posture: `canonical-intelligence-consumer-and-private-graph-evidence`
 
@@ -723,7 +751,7 @@ Compatibility:
 - Workspai CLI 0.55.1+
 - RapidKit Core 0.6.0 only for Python-backed kits/modules
 
-[Full Release Notes](https://github.com/chistiq/rapidkit-vscode/blob/v0.38.0/releases/RELEASE_NOTES_v0.38.0.md)
+[Full Release Notes](https://github.com/chistiq/workspai-vscode/blob/v0.38.0/releases/RELEASE_NOTES_v0.38.0.md)
 
 Release posture: `truthful-evidence-and-typed-repair-decisions`
 
@@ -760,7 +788,7 @@ Compatibility:
 - Workspai CLI 0.55.0+
 - RapidKit Core 0.6.0 only for Python-backed kits/modules
 
-[Full Release Notes](https://github.com/chistiq/rapidkit-vscode/blob/v0.37.0/releases/RELEASE_NOTES_v0.37.0.md)
+[Full Release Notes](https://github.com/chistiq/workspai-vscode/blob/v0.37.0/releases/RELEASE_NOTES_v0.37.0.md)
 
 Release posture: `cli-owned-repair-and-live-change-review`
 
@@ -792,7 +820,7 @@ Compatibility:
 - Workspai CLI 0.52.3+
 - RapidKit Core 0.6.0 only for Python-backed kits/modules
 
-[Full Release Notes](https://github.com/chistiq/rapidkit-vscode/blob/v0.36.0/releases/RELEASE_NOTES_v0.36.0.md)
+[Full Release Notes](https://github.com/chistiq/workspai-vscode/blob/v0.36.0/releases/RELEASE_NOTES_v0.36.0.md)
 
 Release posture: `session-ownership-and-first-install-reliability`
 
@@ -839,7 +867,7 @@ Validation:
 - TypeScript host/webview checks passed
 - Production build passed
 
-[Full Release Notes](https://github.com/chistiq/rapidkit-vscode/blob/v0.35.0/releases/RELEASE_NOTES_v0.35.0.md)
+[Full Release Notes](https://github.com/chistiq/workspai-vscode/blob/v0.35.0/releases/RELEASE_NOTES_v0.35.0.md)
 
 Release posture: `workspace-intelligence-and-verified-studio`
 
@@ -1560,6 +1588,6 @@ Improved readability of Maximize and Lite/Full view toggle buttons in header:
 ## Links
 
 - 📦 [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode)
-- 🐙 [GitHub Repository](https://github.com/chistiq/rapidkit-vscode)
+- 🐙 [GitHub Repository](https://github.com/chistiq/workspai-vscode)
 - 📚 [Documentation](https://www.workspai.com/)
 - 🚀 [npm Package](https://www.npmjs.com/package/rapidkit)

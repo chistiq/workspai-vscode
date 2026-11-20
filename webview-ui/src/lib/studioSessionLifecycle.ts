@@ -1,4 +1,5 @@
 import type { SidebarStudioActionProgressView } from './sidebarStudioActionProgress';
+import { isAIProviderQuotaExhausted } from '../../../src/contracts/aiProviderQuota';
 import { isNoisyStudioInspectFailure, studioTimelineActivityKind } from './studioRepairTimeline';
 
 export type StudioTerminalFailurePresentation = {
@@ -17,6 +18,26 @@ export function describeStudioTerminalFailure(input: {
 }): StudioTerminalFailurePresentation {
   const error = input.error.trim();
   const terminalReason = input.terminalReason?.trim() || undefined;
+  if (terminalReason === 'cancelled') {
+    return {
+      title: 'Stopped',
+      summary: 'The request stopped. You can continue the session with the recorded work.',
+      terminalReason,
+      connectionFailure: false,
+    };
+  }
+  if (
+    terminalReason === 'ai-provider-quota' ||
+    (!terminalReason && isAIProviderQuotaExhausted(error))
+  ) {
+    return {
+      title: 'Model quota reached',
+      summary:
+        'The AI provider paused requests for this model. Select another model or wait for the quota to reset, then continue this session with the recorded work.',
+      terminalReason: 'ai-provider-quota',
+      connectionFailure: false,
+    };
+  }
   if (terminalReason === 'question-incomplete') {
     return {
       title: 'Answer incomplete',
@@ -129,9 +150,9 @@ export function describeStudioTerminalFailure(input: {
   }
   if (terminalReason === 'model-tool-protocol-exhausted') {
     return {
-      title: 'Model cannot drive tools',
+      title: 'Model returned invalid actions',
       summary:
-        'This model did not return a valid tool call. Switch to a tool-capable model and resume the same session. The task was not marked complete.',
+        'The model could not provide a valid next action after the recovery attempts. Select another model and continue this session with the recorded work.',
       ...(error ? { technicalDetail: error } : {}),
       terminalReason,
       connectionFailure: false,

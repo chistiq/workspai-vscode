@@ -315,7 +315,7 @@ Thanks to everyone who contributed to this release!
 
 ## 🔗 Links
 
-- [GitHub Repository](https://github.com/chistiq/rapidkit-vscode)
+- [GitHub Repository](https://github.com/chistiq/workspai-vscode)
 - [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode)
-- [Report Issues](https://github.com/chistiq/rapidkit-vscode/issues)
+- [Report Issues](https://github.com/chistiq/workspai-vscode/issues)
 - [Python Core](https://github.com/chistiq/rapidkit-core)

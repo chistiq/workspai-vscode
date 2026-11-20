@@ -90,7 +90,10 @@ export function studioActivityReceipt(value: unknown): StudioActivityReceipt | u
               ? 'review'
               : 'done';
       if (data.outcome === 'failed') {
-        title = 'Model request failed';
+        title =
+          data.terminalReason === 'ai-provider-quota'
+            ? 'Model quota reached'
+            : 'Model request failed';
       }
       if (data.outcome === 'cancelled') {
         title = 'Model request cancelled';
@@ -101,8 +104,13 @@ export function studioActivityReceipt(value: unknown): StudioActivityReceipt | u
           : text(data.summary);
       break;
     case 'narration':
-      title = data.inputRequired ? 'Question for you' : 'Assistant update';
-      summary = text(data.text);
+      title = data.inputRequired
+        ? 'Question for you'
+        : data.protocolMiss === true
+          ? 'Invalid model action'
+          : 'Assistant update';
+      summary =
+        data.protocolMiss === true ? 'No tool was dispatched for this response.' : text(data.text);
       status = data.inputRequired ? 'review' : 'done';
       break;
     case 'checkpoint':
@@ -164,6 +172,10 @@ export function studioActivityReceipt(value: unknown): StudioActivityReceipt | u
     case 'tool':
       title = `${tool || 'Tool'} · ${stage}`;
       status = stage === 'failed' ? 'failed' : stage === 'completed' ? 'done' : 'running';
+      if (stage === 'failed' && data.authorizationRejected === true) {
+        title = 'Tool blocked before execution';
+        status = 'review';
+      }
       summary = text(data.message || data.summary || data.error || data.reason);
       if (!summary) {
         const detail = [

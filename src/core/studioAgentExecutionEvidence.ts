@@ -67,7 +67,9 @@ export function studioAgentExecutionEvidence(session: StudioAgentPersistedSessio
       }
     }
     if (
-      ['create-workspace', 'onboard-project'].includes(String(data.toolName)) &&
+      ['create-workspace', 'create-project-in-workspace', 'onboard-project'].includes(
+        String(data.toolName)
+      ) &&
       Array.isArray(output.commands)
     ) {
       for (const raw of output.commands) {

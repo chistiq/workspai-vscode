@@ -96,6 +96,22 @@ export interface ChatModeSuggestion {
   label: string;
   description: string;
   request: string;
+  sourceRequestId?: string;
+}
+
+export function chatPlanHandoffRequestId(
+  session: ChatSession,
+  suggestion: ChatModeSuggestion
+): string | undefined {
+  return (
+    suggestion.sourceRequestId ??
+    (suggestion.fromMode === 'plan' && suggestion.toMode === 'agent'
+      ? session.messages
+          .filter((turn) => turn.role === 'assistant')
+          .at(-1)
+          ?.requestIds?.at(-1)
+      : undefined)
+  );
 }
 
 export interface ChatSession {
@@ -173,7 +189,11 @@ export function chatSessionFailureLabel(session: ChatSession): string {
       ? 'Model request timed out'
       : session.terminalReason === 'ai-provider-unavailable'
         ? 'AI connection needed'
-        : 'Needs attention';
+        : session.terminalReason === 'ai-provider-quota'
+          ? 'Model quota reached'
+          : session.terminalReason === 'model-tool-protocol-exhausted'
+            ? 'Model returned invalid actions'
+            : 'Needs attention';
 }
 
 const MAX_PERSISTED_SESSIONS = 24;

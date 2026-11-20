@@ -29,6 +29,7 @@ import {
 import { inspectStudioAgentFiles } from './sidebarStudioAgentRuntime.js';
 import { runStudioCodeIntelligenceTool } from './studioCodeIntelligence.js';
 import { studioAssistantIdeCapabilities } from './studioAssistantIdeCapabilities.js';
+import { renderNativeStudioAgentEvent } from './nativeChatToolEventRenderer.js';
 import type { AIModalContext, AIConversationHistoryEntry } from './aiService.js';
 
 /** Native Ask/Debug use the same routing, model contract, tools and durable session as Sidebar. */
@@ -233,7 +234,11 @@ export async function runNativeAssistantQuestion(input: {
           permissionLevel: 'default',
           workspaceTrusted: vscode.workspace.isTrusted,
           requestToolApproval: (request) =>
-            requestVSCodeStudioToolApproval(request, input.context.workspaceState),
+            requestVSCodeStudioToolApproval(
+              request,
+              input.context.workspaceState,
+              () => input.token.isCancellationRequested
+            ),
           returnOnInput: true,
           requiresVerifiedCompletion: false,
         },
@@ -247,11 +252,16 @@ export async function runNativeAssistantQuestion(input: {
           session.cancel();
         }
         session.onEvent((event) => {
-          if (event.type === 'tool.started') {
-            input.stream.progress(`Using ${String(event.data.toolName)}`);
-          }
-          if (event.type === 'model.message' && event.data.inputRequired === true) {
-            input.stream.markdown(`${String(event.data.text)}\n\n`);
+          // The terminal answer is delivered separately. Keep public tool
+          // evidence and clarifying questions without duplicating the answer.
+          if (
+            (event.type.startsWith('tool.') &&
+              event.type !== 'tool.requested' &&
+              event.type !== 'tool.permission') ||
+            event.type === 'workspace.target.bound' ||
+            (event.type === 'model.message' && event.data.inputRequired === true)
+          ) {
+            renderNativeStudioAgentEvent(input.stream, event);
           }
         });
         const state = await session.run(input.task);

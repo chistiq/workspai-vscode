@@ -1312,7 +1312,8 @@ export async function askConfiguredAIProviderForToolAction(
   token?: vscode.CancellationToken,
   preferredModelId?: string,
   pathIdentities: ReadonlyArray<AIMessagePathIdentity> = [],
-  onProgress?: AIProviderStreamObserver
+  onProgress?: AIProviderStreamObserver,
+  quotaFailures?: Map<string, unknown>
 ): Promise<ConfiguredAIProviderAction> {
   const safeMessages = redactAIMessageRuntimePaths(messages, pathIdentities);
   const settings = readWorkspaiSettings();
@@ -1360,9 +1361,18 @@ export async function askConfiguredAIProviderForToolAction(
       await askAnthropicToolAction(context, safeMessages, tools, token, onProgress)
     );
   }
-  const response = onProgress
-    ? await requestAIModelToolAction(safeMessages, tools, token, requestedModelId, [], onProgress)
-    : await requestAIModelToolAction(safeMessages, tools, token, requestedModelId);
+  const response =
+    onProgress || quotaFailures
+      ? await requestAIModelToolAction(
+          safeMessages,
+          tools,
+          token,
+          requestedModelId,
+          [],
+          onProgress,
+          quotaFailures
+        )
+      : await requestAIModelToolAction(safeMessages, tools, token, requestedModelId);
   return withRequestedModel(
     response.type === 'tool'
       ? {

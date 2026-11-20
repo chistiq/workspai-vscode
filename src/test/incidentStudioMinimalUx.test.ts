@@ -44,7 +44,7 @@ describe('incident studio minimal UX guard', () => {
     expect(sidebar).toContain("'Add context to continue the repair'");
     expect(sidebar).not.toContain('Ask clarifying questions about the fix');
     expect(chatTab).toContain('composerScopeLabel');
-    expect(chatTab).toContain('activeSession?.incident || activeSession?.editorIssue');
+    expect(chatTab).toContain('contextText={composerScopeLabel}');
     expect(chatTab).toMatch(
       /onOpenAdd=\{\s*repairMode\s*\|\|\s*\(!props\.toolbar\s*&&\s*!props\.footerActions\)\s*\?\s*undefined/
     );

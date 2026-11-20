@@ -5,6 +5,11 @@ import path from 'node:path';
 import fs from 'fs-extra';
 import { resolveStudioScopePath } from './studioScopePath.js';
 import { inspectStudioWorkspaceInventory } from './studioWorkspaceInventory.js';
+import { resolveStudioInventoryScope } from './studioInventoryScope.js';
+import {
+  createStudioProjectTarget,
+  type StudioProjectExecutionTarget,
+} from './studioProjectTarget.js';
 import { defaultWorkspaceProfileForKit, isScaffoldFramework } from './scaffoldKits.js';
 import type {
   StudioAgentToolContext,
@@ -31,26 +36,186 @@ type Plan = {
   projects: Array<{ name: string; kit: string }>;
   outputParent?: string;
 };
+
+function isScaffoldSlug(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(value);
+}
+
+function scaffoldProject(raw: unknown): Plan['projects'][number] {
+  const project = raw as { name?: unknown; kit?: unknown } | null;
+  if (!isScaffoldSlug(project?.name)) {
+    throw new Error(
+      'Project directory names must be lowercase slugs of 1-63 letters, digits or hyphens (for example focusboard). Keep a title such as Focusboard separate from its filesystem name.'
+    );
+  }
+  if (typeof project.kit !== 'string' || !/^[a-z0-9][a-z0-9._-]{0,100}$/.test(project.kit)) {
+    throw new Error(
+      'Each project needs a Workspai kit identifier. Discover exact ids with inspect-cli-commands topic=architecture and a focused query; do not infer an id from its display label.'
+    );
+  }
+  return { name: project.name, kit: project.kit };
+}
+
+function scaffoldProjectArgs(project: Plan['projects'][number]): string[] {
+  return ['create', 'project', project.kit, project.name, '--skip-install', '--skip-git', '--yes'];
+}
+
+/** Scaffold directly under the verified owner, even when a project is currently selected. */
+export function studioProjectCreationTool(input: {
+  run: StudioCreationRunner;
+  onTargetReady?: (target: StudioProjectExecutionTarget) => void | Promise<void>;
+}): StudioAgentToolDefinition {
+  const describe = async (raw: unknown, context: StudioAgentToolContext) => {
+    const project = scaffoldProject(raw);
+    const scope = await resolveStudioInventoryScope(context.projectPath ?? context.workspacePath);
+    if (!scope.workspacePath || scope.resolution === 'unresolved') {
+      throw new Error(
+        'This source has no verified Workspai workspace. Use create-workspace for a new destination, or bind-workspace to select an existing destination approved by the user.'
+      );
+    }
+    const workspace = await fs.realpath(scope.workspacePath);
+    const workspaceIdentity = await fs.stat(workspace);
+    const target = path.join(workspace, project.name);
+    const inventory = await inspectStudioWorkspaceInventory(workspace);
+    if (inventory.management !== 'workspai' || inventory.completeness !== 'registered-projects') {
+      throw new Error(
+        'The workspace has no readable project contract. Inspect the workspace binding before creating a project.'
+      );
+    }
+    const conflicts = inventory.projects.some(
+      ({ id, name }) => id.toLowerCase() === project.name || name.toLowerCase() === project.name
+    );
+    const existing = await fs.lstat(target).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'ENOENT') {
+        throw error;
+      }
+      return undefined;
+    });
+    if (conflicts || existing) {
+      throw new Error('That project name or destination already exists in the verified workspace.');
+    }
+    const args = scaffoldProjectArgs(project);
+    const fingerprint = crypto
+      .createHash('sha256')
+      .update(JSON.stringify([workspace, workspaceIdentity.dev, workspaceIdentity.ino, args]))
+      .digest('hex');
+    return { project, workspace, target, args, fingerprint };
+  };
+  return {
+    name: 'create-project-in-workspace',
+    title: 'Create a project in the current Workspai workspace',
+    description:
+      'Scaffold and register a supported Workspai kit as a new project in the verified current workspace, even if a member project is selected. Use this for a new project in that workspace; use create-workspace for a separate workspace. The host resolves the destination and requests exact approval. On success, the new project is selected for implementation and checks. Use a lowercase slug that reflects the user request.',
+    activity: 'change',
+    risk: 'invasive',
+    selectsExecutionTarget: true,
+    inputSchema: {
+      type: 'object',
+      required: ['name', 'kit'],
+      additionalProperties: false,
+      properties: {
+        name: { type: 'string', pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$' },
+        kit: { type: 'string', description: 'Exact Workspai kit id, e.g. nextjs.' },
+      },
+    },
+    async authorize(raw, context) {
+      const { args, target, workspace, fingerprint } = await describe(raw, context);
+      return {
+        risk: 'invasive',
+        approval: {
+          fingerprint,
+          title: 'Create this project?',
+          summary: `Scaffold and register ${target}. Continue implementation and verification in that project after creation.`,
+          displayCommand: JSON.stringify(['workspai', ...args]),
+          cwd: workspace,
+          scope: 'workspace',
+          reasons: ['Creates source files and registers a new project in the verified workspace.'],
+          execution: 'once',
+          allowedExecutions: ['once'],
+        },
+      };
+    },
+    async execute(raw, context) {
+      const { project, workspace, target, args, fingerprint } = await describe(raw, context);
+      if (fingerprint !== context.approval?.fingerprint || context.signal.aborted) {
+        throw new Error('Project creation requires an active approval for this exact destination.');
+      }
+      let command: Record<string, unknown> | undefined;
+      try {
+        const result = await input.run({ args, cwd: workspace, signal: context.signal });
+        command = {
+          args,
+          cwd: workspace,
+          exitCode: result.exitCode,
+          stderr: result.stderr?.slice(-1500),
+        };
+        if (result.exitCode !== 0) {
+          throw new Error(
+            result.stderr?.slice(-1500) || `Workspai exited with code ${result.exitCode}.`
+          );
+        }
+        const inventory = await inspectStudioWorkspaceInventory(target);
+        if (
+          !inventory.workspace ||
+          inventory.completeness !== 'registered-projects' ||
+          inventory.workspace.path !== workspace ||
+          !inventory.projects.some(({ path: registered }) => registered === target) ||
+          (await fs.realpath(target)) !== target
+        ) {
+          throw new Error(
+            'The created project does not have verified membership at the approved destination.'
+          );
+        }
+        const executionTarget = await createStudioProjectTarget(target);
+        const changes = await captureStudioScaffoldChanges({
+          workspacePath: target,
+          sessionId: context.sessionId,
+          requestId: context.requestId,
+        });
+        await input.onTargetReady?.(executionTarget);
+        return {
+          ok: true,
+          changed: true,
+          executionTarget,
+          output: {
+            project: project.name,
+            projectPath: target,
+            workspacePath: workspace,
+            ...changes,
+            commands: [command],
+            instruction:
+              'Continue the original feature requirements in the new project. Scaffold creation alone does not establish that the requested app works. Run the applicable setup and project checks.',
+          },
+        };
+      } catch (error) {
+        return {
+          ok: false,
+          changed: await fs.pathExists(target),
+          error: error instanceof Error ? error.message : String(error),
+          output: {
+            projectPath: target,
+            workspacePath: workspace,
+            commands: command ? [command] : [],
+            instruction:
+              'Inspect the exact failure before choosing another action. Do not repeat the same scaffold command or substitute another destination.',
+          },
+        };
+      }
+    },
+  };
+}
+
 function plan(raw: unknown): Plan {
   const value = raw as Partial<Plan>;
-  const name = (entry: unknown): entry is string =>
-    typeof entry === 'string' && /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(entry);
-  if (!value || !name(value.name) || !Array.isArray(value.projects) || value.projects.length > 8) {
+  if (
+    !value ||
+    !isScaffoldSlug(value.name) ||
+    !Array.isArray(value.projects) ||
+    value.projects.length > 8
+  ) {
     throw new Error('Provide a new workspace name and up to eight named projects.');
   }
-  const projects = value.projects.map((project) => {
-    if (!project || !name(project.name)) {
-      throw new Error(
-        'Project directory names must be lowercase slugs of 1-63 letters, digits or hyphens (for example focusboard). Keep a title such as Focusboard separate from its filesystem name.'
-      );
-    }
-    if (typeof project.kit !== 'string' || !/^[a-z0-9][a-z0-9._-]{0,100}$/.test(project.kit)) {
-      throw new Error(
-        'Each project needs a Workspai kit identifier. Discover exact ids with inspect-cli-commands topic=architecture and a focused query; do not infer an id from its display label.'
-      );
-    }
-    return { name: project.name, kit: project.kit };
-  });
+  const projects = value.projects.map(scaffoldProject);
   if (new Set(projects.map((project) => project.name)).size !== projects.length) {
     throw new Error('Project names must be distinct.');
   }
@@ -371,18 +536,7 @@ export function studioWorkspaceCreationTool(input: {
         await input.onWorkspaceReady?.(owned);
         for (const project of request.projects) {
           await validateStudioCreatedWorkspaceTarget(owned, home);
-          await run(
-            [
-              'create',
-              'project',
-              project.kit,
-              project.name,
-              '--skip-install',
-              '--skip-git',
-              '--yes',
-            ],
-            target
-          );
+          await run(scaffoldProjectArgs(project), target);
           const link = await fs.readJSON(
             path.join(target, project.name, '.workspai', 'workspace-link.local.json')
           );
