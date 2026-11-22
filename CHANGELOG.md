@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.51.1] - 2026-11-22
+
+### Changed
+
+- Limit Visual Studio Marketplace categories to AI and Chat. Remove the unrelated
+  Testing, Debuggers, and Visualization categories.
+
 ## [0.51.0] - 2026-11-20
 
 ### Added

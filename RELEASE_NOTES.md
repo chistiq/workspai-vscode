@@ -1,5 +1,26 @@
 # Release Notes
 
+## v0.51.1 (November 22, 2026)
+
+### Correct Marketplace categories
+
+Prepared November 22, 2026. **Publication status: Prepared for publication.**
+
+- List Workspai only under the Visual Studio Marketplace **AI** and **Chat**
+  categories. Remove the unrelated **Testing**, **Debuggers**, and
+  **Visualization** categories.
+- No runtime or CLI compatibility changes. This metadata-only patch requires
+  publishing extension version `0.51.1` for the Marketplace listing to update.
+
+This release is validated against Workspai CLI 0.82.0. Workspai CLI 0.80.0+
+is supported; the verified bundled runtime remains 0.82.0.
+
+```bash
+npm install -g workspai@0.82.0
+```
+
+[Full release notes](https://github.com/chistiq/workspai-vscode/blob/main/releases/RELEASE_NOTES_v0.51.1.md)
+
 ## v0.51.0 (November 20, 2026)
 
 ### Focused project guidance, grounded in Workspai CLI 0.82.0
