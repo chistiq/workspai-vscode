@@ -11,6 +11,7 @@ export interface CreationPlanSecondaryProject {
   framework: string;
   kit: string;
   projectName: string;
+  suggestedModules?: string[];
 }
 
 export interface CreationPlan {
@@ -24,6 +25,7 @@ export interface CreationPlan {
   suggestedModules: string[];
   description?: string;
   secondaryProject?: CreationPlanSecondaryProject;
+  additionalProjects?: CreationPlanSecondaryProject[];
   authorization?: {
     schemaVersion: 'workspai.create-plan-authorization.v1';
     planId: string;
@@ -38,6 +40,7 @@ export interface CreatedProject {
   framework?: string;
   kit?: string;
   path?: string;
+  installedModules?: string[];
 }
 
 export type CreateAgentScope = {
@@ -51,6 +54,7 @@ export type CreateGuidanceAction =
   | 'none'
   | 'plan-workspace'
   | 'plan-project'
+  | 'select-workspace'
   | 'adopt-project'
   | 'import-project'
   | 'import-workspace'

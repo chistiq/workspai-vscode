@@ -1,4 +1,4 @@
-import type { AICreationPlan } from './aiService.js';
+import type { AICreationPlan, AICreationProject } from './aiService.js';
 import { describePortableCreationFailure } from './portableCreationFailure.js';
 import type {
   ManagedWorkspaceCreationInput,
@@ -17,6 +17,7 @@ export type CreateExecutionProject = {
   framework: string;
   kit: string;
   path: string;
+  installedModules?: string[];
 };
 
 export type CreateExecutionProgress = {
@@ -47,7 +48,7 @@ export function describeCreateExecutionFailure(
   const failure = describePortableCreationFailure(error.cause ?? error, resourceName);
   return {
     ...failure,
-    message: `${failure.message} Stopped during ${error.phase}; earlier steps may have completed.`,
+    message: `${failure.message} Stopped during ${error.phase}. ${failure.technicalMessage.trim().slice(0, 1400)}`,
     retryable: error.safeToRetry && failure.retryable,
   };
 }
@@ -70,8 +71,9 @@ export type CreateExecutionCapabilityHost = {
     framework: AICreationPlan['framework'];
     projectName: string;
     kit: string;
-  }) => Promise<void>;
-  projectPath: (workspacePath: string, projectName: string) => string;
+    modules?: string[];
+  }) => Promise<{ path: string; installedModules: string[] }>;
+  preflightProjects?: (workspacePath: string, projects: AICreationProject[]) => Promise<void>;
   syncIntelligence: (workspacePath: string) => Promise<void>;
   refreshProjects: () => Promise<void>;
   onProgress: (progress: CreateExecutionProgress) => void;
@@ -81,12 +83,18 @@ export type CreateExecutionCapabilityHost = {
   ) => AICreationPlan['profile'];
 };
 
+export function creationPlanProjects(plan: AICreationPlan): AICreationProject[] {
+  return [
+    plan,
+    ...(plan.secondaryProject ? [plan.secondaryProject] : []),
+    ...(plan.additionalProjects ?? []),
+  ];
+}
+
 export function createPlanRequiresPythonEngine(plan: AICreationPlan): boolean {
-  return (
-    workspacePythonEngineForKit(plan.kit) === 'required' ||
-    (plan.secondaryProject
-      ? workspacePythonEngineForKit(plan.secondaryProject.kit) === 'required'
-      : false)
+  return creationPlanProjects(plan).some(
+    ({ kit, suggestedModules }) =>
+      workspacePythonEngineForKit(kit) === 'required' || Boolean(suggestedModules?.length)
   );
 }
 
@@ -107,8 +115,7 @@ export function resolveCreatePlanWorkspaceProfile(
   }
 
   const runtimes = new Set<ScaffoldRuntimeFamily>([
-    ...scaffoldRuntimeCandidatesForKit(plan.kit),
-    ...(plan.secondaryProject ? scaffoldRuntimeCandidatesForKit(plan.secondaryProject.kit) : []),
+    ...creationPlanProjects(plan).flatMap(({ kit }) => scaffoldRuntimeCandidatesForKit(kit)),
   ]);
   if (runtimes.size > 1) {
     return 'polyglot';
@@ -146,6 +153,7 @@ export async function executeApprovedCreatePlan(input: {
     );
     const workspace = await host.createWorkspace({
       name: plan.workspaceName,
+      requireNew: true,
       profile,
       // Models describe the product. The verified runtime owns host-specific
       // toolchain selection and chooses an available mechanism.
@@ -161,6 +169,13 @@ export async function executeApprovedCreatePlan(input: {
     if (!workspace.ok) {
       return { ok: false, failure: workspace };
     }
+    if (workspace.reused) {
+      throw new CreateExecutionCapabilityError(
+        'workspace',
+        false,
+        new Error('The new workspace destination already exists.')
+      );
+    }
     workspacePath = workspace.workspacePath;
   } else if (!workspacePath) {
     throw new CreateExecutionCapabilityError(
@@ -170,64 +185,51 @@ export async function executeApprovedCreatePlan(input: {
     );
   }
 
-  host.onProgress({
-    phase: 'project',
-    title: 'Creating project structure',
-    detail: `${plan.projectName} · ${plan.framework} · ${plan.kit}`,
-  });
+  const requested = creationPlanProjects(plan);
   try {
-    await host.createProject({
-      workspacePath,
-      framework: plan.framework,
-      projectName: plan.projectName,
-      kit: plan.kit,
-    });
+    await host.preflightProjects?.(workspacePath, requested);
   } catch (error) {
     throw new CreateExecutionCapabilityError('project', false, error);
   }
-  const projects: CreateExecutionProject[] = [
-    {
-      name: plan.projectName,
-      framework: plan.framework,
-      kit: plan.kit,
-      path: host.projectPath(workspacePath, plan.projectName),
-    },
-  ];
-
-  if (plan.type === 'workspace' && plan.secondaryProject) {
+  const projects: CreateExecutionProject[] = [];
+  for (const project of requested) {
+    const phase = project === plan ? 'project' : 'companion';
     host.onProgress({
-      phase: 'companion',
-      title: 'Creating companion project',
-      detail: `${plan.secondaryProject.projectName} · ${plan.secondaryProject.framework}`,
+      phase,
+      title: phase === 'project' ? 'Creating project structure' : 'Creating companion project',
+      detail: `${project.projectName} · ${project.kit}`,
     });
     try {
-      await host.createProject({
+      const receipt = await host.createProject({
         workspacePath,
-        framework: plan.secondaryProject.framework,
-        projectName: plan.secondaryProject.projectName,
-        kit: plan.secondaryProject.kit,
+        framework: project.framework,
+        projectName: project.projectName,
+        kit: project.kit,
+        ...(project.suggestedModules?.length ? { modules: project.suggestedModules } : {}),
+      });
+      projects.push({
+        name: project.projectName,
+        framework: project.framework,
+        kit: project.kit,
+        path: receipt.path,
+        ...(receipt.installedModules.length ? { installedModules: receipt.installedModules } : {}),
       });
     } catch (error) {
-      throw new CreateExecutionCapabilityError('companion', false, error);
+      const completed = projects.map(({ name }) => name).join(', ');
+      const cause = completed
+        ? new Error(
+            `Completed projects: ${completed}. ${error instanceof Error ? error.message : String(error)}`,
+            { cause: error }
+          )
+        : error;
+      throw new CreateExecutionCapabilityError(phase, false, cause);
     }
-    projects.push({
-      name: plan.secondaryProject.projectName,
-      framework: plan.secondaryProject.framework,
-      kit: plan.secondaryProject.kit,
-      path: host.projectPath(workspacePath, plan.secondaryProject.projectName),
-    });
   }
 
   host.onProgress({
     phase: 'intelligence',
-    title:
-      plan.type === 'project'
-        ? 'Syncing workspace intelligence'
-        : 'Preparing workspace intelligence',
-    detail:
-      plan.suggestedModules.length > 0
-        ? `Module suggestions captured: ${plan.suggestedModules.join(', ')}`
-        : 'Refreshing workspace model and project evidence.',
+    title: plan.type === 'project' ? 'Refreshing workspace view' : 'Opening the new workspace',
+    detail: 'Loading newly registered projects.',
   });
   try {
     await host.syncIntelligence(workspacePath);

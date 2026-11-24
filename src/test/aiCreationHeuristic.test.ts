@@ -13,11 +13,7 @@ describe('buildHeuristicCreationDraft', () => {
     expect(draft.kit).toBe('nestjs.standard');
     expect(draft.profile).toBe('node-only');
     expect(draft.suggestedModules).toEqual(
-      expect.arrayContaining([
-        'free/essentials/settings',
-        'free/auth/core',
-        'free/database/db_postgres',
-      ])
+      expect.arrayContaining(['free/auth/core', 'free/database/db_postgres'])
     );
   });
 

@@ -1,5 +1,6 @@
+import { corePythonRequirementForKit } from '@workspai-contracts/rapidkitCoreRuntime';
 import { ArrowDown, Check } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { ComposerShell } from './composer/ComposerShell';
 import { ChatSessionBar } from './composer/ChatSessionBar';
 import { CreateTargetSelector, type CreateTarget } from './composer/CreateTargetSelector';
@@ -44,7 +45,12 @@ interface CreateTabProps {
   scope: SidebarScope;
   initialDrawer?: CreateDrawerId;
   initialDrawerKey?: number;
-  onSubmitPrompt: (prompt: string, stackFocus: string, target: CreateTarget) => void;
+  onSubmitPrompt: (
+    prompt: string,
+    stackFocus: string,
+    target: CreateTarget,
+    targetExplicit: boolean
+  ) => void;
   onApprovePlan: (plan: CreationPlan, sessionId: string) => void;
   onRevisePlan: () => void;
   onManualCreate: (input: ManualWorkspaceInput | ManualProjectInput) => void;
@@ -174,7 +180,12 @@ export function CreateTab(props: CreateTabProps) {
     if (!trimmed || busy) {
       return;
     }
-    props.onSubmitPrompt(trimmed, stackLaneLabel(stackLane), createTarget);
+    props.onSubmitPrompt(
+      trimmed,
+      stackLaneLabel(stackLane),
+      createTarget,
+      createTargetExplicitRef.current
+    );
     setPrompt('');
     closeDrawer();
   };
@@ -183,7 +194,11 @@ export function CreateTab(props: CreateTabProps) {
     if (action === 'plan-workspace' || action === 'plan-project') {
       const target = action === 'plan-workspace' ? 'workspace' : 'project';
       selectCreateTarget(target);
-      props.onSubmitPrompt(request, stackLaneLabel(stackLane), target);
+      props.onSubmitPrompt(request, stackLaneLabel(stackLane), target, true);
+      return;
+    }
+    if (action === 'select-workspace') {
+      props.onFocusView('workspaces');
       return;
     }
     if (action === 'adopt-project') {
@@ -314,7 +329,8 @@ export function CreateTab(props: CreateTabProps) {
     props.onSubmitPrompt(
       request.text,
       stackLaneLabel(stackLane),
-      activeCreateSession?.target ?? createTarget
+      activeCreateSession?.target ?? createTarget,
+      createTargetExplicitRef.current
     );
   };
 
@@ -401,7 +417,7 @@ export function CreateTab(props: CreateTabProps) {
                     setPrompt('Create a project in this workspace');
                   }}
                 >
-                  New project
+                  Add to existing workspace
                 </button>
                 <button
                   type="button"
@@ -428,6 +444,7 @@ export function CreateTab(props: CreateTabProps) {
               onCreateManual={() => setDrawer('workspace')}
               onBootstrapWorkspace={props.onBootstrapWorkspace}
               onGuidanceAction={handleGuidanceAction}
+              workspaceAvailable={Boolean(scope.workspacePath)}
               onOpenSetup={props.onOpenSetup}
               onRedraft={redraftActivePlan}
               onContinueInAgent={() => continueInAgent(message)}
@@ -503,6 +520,7 @@ function displayNameFromPath(value: string | undefined): string | undefined {
 
 function CreateMessageView({
   message,
+  workspaceAvailable,
   agentActive = false,
   onApprove,
   onRevise,
@@ -515,6 +533,7 @@ function CreateMessageView({
   onContinueInAgent,
 }: {
   message: CreateMessage;
+  workspaceAvailable: boolean;
   agentActive?: boolean;
   onApprove: (plan: CreationPlan) => void;
   onRevise: () => void;
@@ -537,6 +556,7 @@ function CreateMessageView({
       {renderCreateBody(
         message,
         {
+          workspaceAvailable,
           onApprove,
           onRevise,
           onFocus,
@@ -556,6 +576,7 @@ function CreateMessageView({
 function renderCreateBody(
   message: CreateMessage,
   actions: {
+    workspaceAvailable: boolean;
     onApprove: (plan: CreationPlan) => void;
     onRevise: () => void;
     onFocus: (target: 'workspaces' | 'projects') => void;
@@ -608,6 +629,7 @@ function renderCreateBody(
       const actionLabels: Partial<Record<CreateGuidanceAction, string>> = {
         'plan-workspace': 'Plan a workspace',
         'plan-project': 'Plan a project',
+        'select-workspace': 'Select workspace',
         'adopt-project': 'Choose project folder',
         'import-project': 'Import project',
         'import-workspace': 'Import workspace',
@@ -626,6 +648,15 @@ function renderCreateBody(
               >
                 {actionLabel}
               </button>
+              {message.action === 'select-workspace' && actions.workspaceAvailable ? (
+                <button
+                  type="button"
+                  className="ws-sidebar__inline"
+                  onClick={() => actions.onGuidanceAction('plan-project', message.request)}
+                >
+                  Draft in selected workspace
+                </button>
+              ) : null}
             </div>
           ) : null}
         </>
@@ -633,10 +664,11 @@ function renderCreateBody(
     }
     case 'plan': {
       const plan = message.plan;
-      const modules =
-        plan.suggestedModules?.length > 0
-          ? plan.suggestedModules.join(', ')
-          : 'No optional modules selected';
+      const projects = [
+        plan,
+        ...(plan.secondaryProject ? [plan.secondaryProject] : []),
+        ...(plan.additionalProjects ?? []),
+      ];
       return (
         <>
           <details className="ws-sidebar__create-plan" open={!message.resolved}>
@@ -646,10 +678,11 @@ function renderCreateBody(
                 Local planner — AI was unavailable; review the stack before continuing.
               </p>
             ) : null}
+            {plan.description ? <p className="ws-sidebar__plan-note">{plan.description}</p> : null}
             <div className="ws-sidebar__plan ws-sidebar__artifact-card">
               <PlanItem
                 label="Target"
-                value={plan.type === 'project' ? 'New project' : 'New workspace and first project'}
+                value={plan.type === 'project' ? 'Current workspace' : 'New workspace'}
               />
               {plan.type === 'project' ? (
                 <PlanItem label="Destination" value={`${plan.workspaceName} · active workspace`} />
@@ -659,17 +692,23 @@ function renderCreateBody(
                   <PlanItem label="Workspace" value={`${plan.workspaceName} · will be created`} />
                 </>
               )}
-              <PlanItem
-                label="Project"
-                value={`${plan.projectName} · ${plan.framework} · ${plan.kit}`}
-              />
-              {plan.secondaryProject ? (
-                <PlanItem
-                  label="Companion"
-                  value={`${plan.secondaryProject.projectName} · ${plan.secondaryProject.framework}`}
-                />
-              ) : null}
-              <PlanItem label="Modules" value={modules} />
+              {projects.map((project) => {
+                const requirement = corePythonRequirementForKit(project.kit);
+                return (
+                  <Fragment key={project.projectName}>
+                    <PlanItem label="Project" value={`${project.projectName} · ${project.kit}`} />
+                    {requirement ? (
+                      <PlanItem label="Core prerequisite" value={requirement} />
+                    ) : null}
+                    {project.suggestedModules?.length ? (
+                      <PlanItem
+                        label={`Modules for ${project.projectName}`}
+                        value={project.suggestedModules.join(', ')}
+                      />
+                    ) : null}
+                  </Fragment>
+                );
+              })}
             </div>
           </details>
           {message.resolved ? null : (
@@ -697,7 +736,10 @@ function renderCreateBody(
             <Check size={14} strokeWidth={2.2} aria-hidden="true" />
             <div>
               <strong>Scaffold created</strong>
-              <span>Workspace Intelligence is synced and the created projects are registered.</span>
+              <span>
+                Project registration and selected module installs were checked. Run project setup
+                and tests when ready.
+              </span>
             </div>
           </div>
           <div className="ws-sidebar__inline-actions">
@@ -731,7 +773,7 @@ function renderCreateBody(
                 <PlanItem
                   key={i}
                   label="Project"
-                  value={`${p.name ?? 'Project'} · ${p.framework ?? ''}`}
+                  value={`${p.name ?? 'Project'} · ${p.framework ?? ''}${p.installedModules?.length ? ` · Modules installed: ${p.installedModules.join(', ')}` : ''}`}
                 />
               ))}
             </div>

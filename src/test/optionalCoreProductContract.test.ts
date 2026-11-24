@@ -24,7 +24,7 @@ describe('optional RapidKit Core product contract', () => {
 
     expect(setup).toContain("title: 'Workspai CLI'");
     expect(setup).toMatch(/title: 'Workspai CLI',[\s\S]*?required: true/);
-    expect(setup).toMatch(/title: 'Python 3\.10\+',[\s\S]*?required: false/);
+    expect(setup).toMatch(/title: 'Python',[\s\S]*?CORE_PYTHON_REQUIREMENT[\s\S]*?required: false/);
     expect(setup).toMatch(/title: 'RapidKit Core',[\s\S]*?required: false/);
     expect(setup).not.toContain('Required for all scaffold and lifecycle commands');
     expect(setupHost).toContain("installStatus.coreInstallType === 'workspace'");

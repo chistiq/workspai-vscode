@@ -1,85 +1,85 @@
-# Workspai for VS Code
+# Workspai — AI Coding Assistant for VS Code
 
 ### AI coding, grounded in your workspace.
 
-Find the right code, make a change, and see which checks actually passed.
-Workspai is an open-source coding assistant with a workspace graph that
-connects source, tests, dependencies, and diagnostics. Start with the repository
-you already have, or scaffold a new project from chat.
+Find the code behind a bug, review the proposed fix, and see which tests passed.
+Workspai is an open-source AI coding assistant for VS Code. Use it on a repository
+you already have or create a new project from chat.
 
 [**Install Workspai for VS Code**](https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode) · [Getting started](docs/GETTING_STARTED.md) · [Documentation](https://www.workspai.dev/)
 
-[![Marketplace version](https://img.shields.io/visual-studio-marketplace/v/rapidkit.rapidkit-vscode?style=flat-square&color=00CFC1)](https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode) [![Marketplace installs](https://img.shields.io/visual-studio-marketplace/i/rapidkit.rapidkit-vscode?style=flat-square)](https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode) [![License: MIT](https://img.shields.io/badge/License-MIT-111827?style=flat-square)](LICENSE)
+[![Marketplace version](https://img.shields.io/visual-studio-marketplace/v/rapidkit.rapidkit-vscode?style=flat-square&color=00CFC1)](https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode) [![License: MIT](https://img.shields.io/badge/License-MIT-111827?style=flat-square)](LICENSE)
 
-![Workspai Agent investigating a workspace issue, reviewing changes, and verifying the repair](media/readme/incident-studio.gif)
+## Install and try your first task
+
+1. In VS Code 1.106 or newer, open **Extensions**, search for **Workspai**, and choose **Install**.
+2. Open a project, then open **Workspai → Assistant**. Select **Agent** and choose an available model.
+3. Try a small change and inspect the diff and recorded checks.
+
+> Find the code that formats file sizes. Handle zero bytes, add a regression test, and run the relevant checks.
+
+Prefer the terminal?
+
+```sh
+code --install-extension rapidkit.rapidkit-vscode
+```
+
+Registration is optional for ordinary coding. Workspai downloads its pinned CLI
+from npm on first activation and reuses the cached copy. A global CLI, a
+separate Node.js installation, and Python are optional for ordinary coding.
 
 **Ask → inspect → change → test → verify**
-
-## Try it on your own repository
-
-1. Install Workspai and open a project in VS Code.
-2. Open **Workspai → Assistant** and select **Ask** to explore or **Agent** to make a change.
-3. Choose an available model and give it a task.
-
-> Add a regression test for this bug and run the closest project checks.
-
-Try **Plan** when you want to review an approach before applying it. Use **Create**
-to quickly scaffold a project, such as a React frontend and a FastAPI service in
-a new workspace. The CLI generates the files from templates, keeping model
-token use low.
-
-Registration is optional for ordinary coding. When you want Workspai to maintain
-project context and dependency evidence, approve adoption in place. The extension
-provisions its pinned CLI on first use and caches it. A global CLI install is
-optional.
 
 ## One assistant, four ways to work
 
 | Mode | What you get |
 | --- | --- |
-| **Ask** | Read-only answers backed by source, diagnostics, and available workspace evidence. |
-| **Plan** | A read-only implementation plan you can review and pass to Agent for the same project. |
-| **Agent** | Scoped source edits, command output, diffs, and the results of the checks that ran. |
+| **Ask** | Read-only answers grounded in source and editor diagnostics. |
+| **Plan** | A plan to review and hand off to Agent in the same project. |
+| **Agent** | Scoped edits, diffs, command output, and the results of checks that ran. |
 | **Goal** | A durable engineering objective with explicit verification and progress. |
 
-### Find the files and checks that matter
+### Search your codebase and find the right test
 
-Workspai CLI `0.82.0` supplies a compact route for a selected project. The
-Assistant can use the route to find candidate source and tests, open evidence
-against the same Graph revision, and select an applicable check from the
-project manifest. Source search and editor diagnostics remain available
-when graph evidence is incomplete.
+The Assistant can follow a project-scoped route to relevant source and
+manifest-backed checks. Adopt a repository in place to add a workspace graph
+of project and dependency relationships. When Graph evidence is unavailable,
+the Assistant can still search source and use editor diagnostics.
 
-Open **Graph** to explore relationships. Use **Live** and **Artifacts** to
-inspect activity, workspace reports, and the evidence behind decisions.
+Approvals show the action and its scope. You can stop a request, review file-level
+diffs, and use **Keep** or **Restore** for supported checkpoints.
 
-![Workspai Graph showing project relationships and their supporting evidence](media/readme/workspace-graph.png)
+[See the Workspai workspace graph](media/readme/workspace-graph.png)
 
-### Review changes and stay in control
+### Create a project from chat
 
-Follow tool activity and command results in chat. Approve sensitive actions for
-their exact scope or decline them. Review changed files with line totals and
-open individual diffs. Use **Keep** or **Restore** for supported source
-checkpoints. You can stop a running request and inspect its recorded activity.
+Open **Create** to scaffold a FastAPI or NestJS backend, a Next.js or Vite web
+app, a desktop app, an AI agent, or a VS Code extension. CLI templates do the
+scaffolding, so the model spends fewer tokens generating boilerplate. Requirements
+depend on the selected kit. RapidKit Core-backed operations use Python 3.11
+through 3.x, and NestJS applications run on Node.js.
+
+In **Create** or **Assistant**, ask for a FastAPI or NestJS project and describe
+the capabilities you need, such as authentication or rate limiting. Choose a
+new or existing Workspai workspace and review the matching modules and their
+dependencies before creating the project.
 
 ## Choose your model
 
-Use models exposed by VS Code, including GitHub Copilot models when available,
-or bring your own API key. Workspai supports `OpenAI`, `Claude`, `Gemini`, `Kimi`,
-`DeepSeek`, `xAI (Grok)`, `Ollama`, and additional providers. Codex and Grok model access depends
-on the configured provider and account. Image and tool support depends on the
-model. Provider credentials are stored in VS Code Secret Storage.
+Use models exposed by VS Code, including available GitHub Copilot models, or
+configure a provider such as `OpenAI`, `Claude`, `Gemini`, `Kimi`, `DeepSeek`,
+`xAI (Grok)`, or `Ollama`. Tool and image support depends on the model. API
+credentials are stored in VS Code Secret Storage.
 
-Enable inline suggestions in User Settings for editor completions. Supported
-VS Code and MCP tools can extend Assistant capabilities within the host's
-permissions.
+Inline suggestions are opt-in in User Settings. The Assistant can also use supported
+VS Code and MCP tools within the host's permissions.
 
 ## Resources
 
-- [Setup and provider configuration](docs/GETTING_STARTED.md)
+- [Set up a model and run your first task](docs/GETTING_STARTED.md)
 - [Workspai CLI](https://www.npmjs.com/package/workspai)
 - [Release notes](RELEASE_NOTES.md)
 - [Contributing](CONTRIBUTING.md)
-- [Issues and feature requests](https://github.com/chistiq/workspai-vscode/issues)
+- [Report an issue](https://github.com/chistiq/workspai-vscode/issues)
 
 MIT © [Chistiq](https://github.com/chistiq)

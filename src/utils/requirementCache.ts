@@ -3,21 +3,11 @@
  * Caches Python and Poetry availability checks to speed up workspace creation
  */
 
+import type { PythonCheckResult } from './pythonChecker';
+
 interface CacheEntry<T> {
   value: T;
   timestamp: number;
-}
-
-interface PythonCheckResult {
-  available: boolean;
-  version?: string;
-  versionNumber?: { major: number; minor: number };
-  meetsMinimumVersion: boolean;
-  command?: 'python3' | 'python';
-  venvSupport: boolean;
-  rapidkitCoreInstalled: boolean;
-  error?: string;
-  recommendation?: string;
 }
 
 class RequirementCache {

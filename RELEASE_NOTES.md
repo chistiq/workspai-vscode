@@ -1,5 +1,38 @@
 # Release Notes
 
+## v0.51.2 (November 24, 2026)
+
+### Easier onboarding with Workspai CLI 0.83.0
+
+Prepared November 24, 2026. **Publication status: Prepared for publication.**
+
+This release is validated against Workspai CLI 0.83.0. Workspai CLI 0.80.0+
+remains the compatibility floor.
+
+- Use the official 0.83.0 npm runtime, matching contracts, and refreshed
+  Assistant reference material.
+- Use Python 3.11 through 3.x for RapidKit Core 0.6.3. NestJS runs on Node.js,
+  with Python used when scaffolding or installing modules through Core.
+- Create projects from updated FastAPI and NestJS templates and use the
+  refreshed agent and gateway SDK baselines from the pinned CLI.
+- Find **Workspai – AI Coding Assistant** in the Marketplace. The README starts
+  with installation steps and a first task you can try in your repository.
+- Browse 31 starter kits and 52 Core 0.6.3 module references when live catalog
+  data is unavailable. The module browser labels the reference snapshot.
+
+- Create and Assistant can discover compatible RapidKit modules for each new
+  FastAPI or NestJS project. The approval shows the module dependencies. After
+  creation, Workspai reports the modules confirmed in the project registry.
+- Build multiple projects in the selected or new workspace with one Create
+  proposal. Workspai preserves explicitly selected kit variants and reports
+  partial progress if a scaffold or module install fails.
+
+```bash
+npm install -g workspai@0.83.0
+```
+
+[Full release notes](https://github.com/chistiq/workspai-vscode/blob/main/releases/RELEASE_NOTES_v0.51.2.md)
+
 ## v0.51.1 (November 22, 2026)
 
 ### Correct Marketplace categories

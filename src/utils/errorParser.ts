@@ -3,6 +3,7 @@
  */
 
 import { Logger } from './logger';
+import { CORE_PYTHON_REQUIREMENT } from '../contracts/rapidkitCoreRuntime';
 
 const logger = Logger.getInstance();
 
@@ -44,14 +45,16 @@ export function parseRapidKitError(stderr: string, stdout: string = ''): ParsedE
   if (
     fullOutput.includes('python not found') ||
     fullOutput.includes('python3 not found') ||
+    fullOutput.includes('no python interpreter found') ||
+    fullOutput.includes('python 3.11+ is required by rapidkit core') ||
     fullOutput.includes('python 3.10+ not found')
   ) {
     return {
       type: 'python_missing',
       title: 'Python Not Found',
-      message: 'Python 3.10+ is required but not found on your system.',
+      message: `RapidKit Core requires ${CORE_PYTHON_REQUIREMENT}.`,
       suggestion:
-        '• Install Python 3.10 or newer\n' +
+        `• Install ${CORE_PYTHON_REQUIREMENT}\n` +
         '• Ensure Python is in your PATH\n' +
         '• Restart VS Code after installation',
       canRetry: true,

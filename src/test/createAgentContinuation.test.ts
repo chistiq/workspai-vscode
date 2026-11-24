@@ -196,6 +196,32 @@ describe('Create continuation and transcript behavior', () => {
     );
   });
 
+  it('resumes an existing-workspace request with the original text after selection', async () => {
+    const request = 'Create a store in the current workspace';
+    const p = props([
+      {
+        id: 'choose-workspace',
+        role: 'ai',
+        kind: 'guidance',
+        response: 'Choose a workspace to draft the plan.',
+        intent: 'create',
+        confidence: 'high',
+        action: 'select-workspace',
+        request,
+      },
+    ]);
+    await act(async () => root.render(createElement(CreateTab, { ...p, scope: {} })));
+    await act(async () => button('Select workspace').click());
+    expect(p.onFocusView).toHaveBeenCalledWith('workspaces');
+    expect(button('Draft in selected workspace')).toBeUndefined();
+    expect(p.onSubmitPrompt).not.toHaveBeenCalled();
+
+    await act(async () => root.render(createElement(CreateTab, p)));
+    await act(async () => button('Draft in selected workspace').click());
+    expect(p.onSubmitPrompt).toHaveBeenCalledWith(request, 'Any stack', 'project', true);
+    expect(p.onApprovePlan).not.toHaveBeenCalled();
+  });
+
   it('continues the original request at the created project, independently of the selected workspace', async () => {
     const p = props([user, done, { ...user, id: 'later', text: 'An unrelated later request' }]);
     await act(async () => root.render(createElement(CreateTab, p)));

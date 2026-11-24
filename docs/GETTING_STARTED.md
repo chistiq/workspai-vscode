@@ -2,7 +2,7 @@
 
 <!-- WORKSPAI:CLI-RELEASE-POLICY:START -->
 
-> Extension 0.51.1 · verified with Workspai CLI 0.82.0 · minimum compatible CLI 0.80.0
+> Extension 0.51.2 · verified with Workspai CLI 0.83.0 · minimum compatible CLI 0.80.0
 
 <!-- WORKSPAI:CLI-RELEASE-POLICY:END -->
 
@@ -22,8 +22,9 @@ Graph, or governed Goal flows. Ordinary Agent tasks also work directly in an
 open folder without CLI setup or an implicit Goal Pack.
 
 Python is **not required** for the extension, Workspace Intelligence, or
-non-Python projects. RapidKit Core and Python 3.10+ are optional and only needed
-for Python-backed kits or modules.
+non-Python projects. RapidKit Core 0.6.3 uses Python 3.11 through 3.x when a
+kit or module goes through Core. NestJS runs on Node.js. Its optional Core
+scaffolding and module bridge uses Python.
 
 ## Configure an AI provider
 
@@ -225,7 +226,7 @@ availability and selection in another agent depend on that host's tool support.
 3. Optional: install the CLI when you also want terminal access:
 
    ```bash
-   npm install -g workspai@0.82.0
+   npm install -g workspai@0.83.0
    workspai --version
    ```
 

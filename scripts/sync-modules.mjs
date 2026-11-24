@@ -2,6 +2,8 @@ import { execa } from 'execa';
 import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { parse } from 'yaml';
+import { format, resolveConfig } from 'prettier';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -10,9 +12,11 @@ const modulesFile = path.join(rootDir, 'src', 'data', 'modules.ts');
 
 async function resolveRapidkitCoreExecutable() {
   const configured = process.env.RAPIDKIT_CORE_EXECUTABLE?.trim();
-  const localCoreRoot = path.resolve(rootDir, '..', '..', 'core');
+  if (configured) {
+    return configured;
+  }
+  const localCoreRoot = path.resolve(rootDir, '..', 'core');
   const candidates = [
-    configured,
     path.join(localCoreRoot, '.venv', 'bin', 'rapidkit'),
     path.join(localCoreRoot, '.venv', 'Scripts', 'rapidkit.exe'),
   ].filter(Boolean);
@@ -94,6 +98,15 @@ function moduleToTs(entry, iconMap) {
     const tagsLiteral = tags.map((t) => `'${escapeString(t)}'`).join(', ');
     lines.push(`    tags: [${tagsLiteral}],`);
   }
+  for (const [key, values] of [
+    ['frameworks', entry.frameworks],
+    ['dependencies', entry.dependencies],
+    ['capabilities', entry.capabilities ?? []],
+  ]) {
+    if (values.length) {
+      lines.push(`    ${key}: [${values.map((value) => `'${escapeString(value)}'`).join(', ')}],`);
+    }
+  }
 
   lines.push(`    slug: '${escapeString(slug)}',`);
   lines.push('  },');
@@ -101,11 +114,29 @@ function moduleToTs(entry, iconMap) {
 }
 
 async function main() {
+  const fileContent = await fs.readFile(modulesFile, 'utf-8');
+  const versionIndex = process.argv.indexOf('--core-version');
+  const expectedVersion =
+    versionIndex >= 0
+      ? process.argv[versionIndex + 1]
+      : /MODULE_CATALOG_CORE_VERSION = '([^']+)'/.exec(fileContent)?.[1];
+  if (!expectedVersion || !/^\d+\.\d+\.\d+$/.test(expectedVersion)) {
+    throw new Error('Supply the exact packaged Core baseline with --core-version <version>.');
+  }
+
   const executable = await resolveRapidkitCoreExecutable();
+  const probe = await execa(executable, ['--version'], { timeout: 10_000 });
+  const actualVersion = /\bRapidKit Version v?(\S+)/.exec(probe.stdout)?.[1];
+  if (actualVersion !== expectedVersion) {
+    throw new Error(
+      `Expected RapidKit Core ${expectedVersion}, found ${actualVersion ?? 'unknown'}. Set RAPIDKIT_CORE_EXECUTABLE to the matching release.`
+    );
+  }
   let result;
   try {
-    result = await execa(executable, ['modules', 'list', '--json-schema', '1'], {
+    result = await execa(executable, ['modules', 'list', '--detailed', '--json-schema', '1'], {
       reject: false,
+      timeout: 30_000,
     });
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
@@ -127,11 +158,34 @@ async function main() {
     throw new Error('No JSON payload found in rapidkit output');
   }
   const payload = JSON.parse(raw.slice(jsonStart, jsonEnd + 1));
-  if (!payload || payload.schema_version !== 1 || !Array.isArray(payload.modules)) {
+  if (
+    !payload ||
+    payload.schema_version !== 1 ||
+    !Array.isArray(payload.modules) ||
+    payload.modules.length === 0 ||
+    payload.stats?.invalid !== 0 ||
+    payload.stats?.total !== payload.modules.length ||
+    payload.modules.some((entry) => typeof entry.slug !== 'string' || !entry.slug)
+  ) {
     throw new Error('Unexpected payload from rapidkit modules list --json-schema 1');
   }
+  const slugs = new Set(payload.modules.map((entry) => entry.slug));
+  for (const entry of payload.modules) {
+    const manifest = parse(await fs.readFile(path.join(entry.module_path, 'module.yaml'), 'utf8'));
+    const frameworks = manifest.compatibility?.frameworks;
+    const dependencies = manifest.depends_on ?? [];
+    if (
+      !Array.isArray(frameworks) ||
+      !frameworks.length ||
+      !frameworks.every((framework) => typeof framework === 'string') ||
+      !Array.isArray(dependencies) ||
+      !dependencies.every((slug) => slugs.has(slug))
+    ) {
+      throw new Error(`Incomplete compatibility or dependency data for ${entry.slug}`);
+    }
+    Object.assign(entry, { frameworks, dependencies });
+  }
 
-  const fileContent = await fs.readFile(modulesFile, 'utf-8');
   const modulesStart = fileContent.indexOf('export const MODULES:');
   const categoryStart = fileContent.indexOf('export const CATEGORY_INFO');
 
@@ -139,7 +193,9 @@ async function main() {
     throw new Error('Could not locate MODULES or CATEGORY_INFO in modules.ts');
   }
 
-  const header = fileContent.slice(0, modulesStart);
+  const header = fileContent
+    .slice(0, modulesStart)
+    .replace(/export const MODULE_CATALOG_CORE_VERSION = '[^']+';\n\n/, '');
   const tail = fileContent.slice(categoryStart);
 
   const iconMap = buildCategoryIconsMap(tail);
@@ -183,7 +239,22 @@ async function main() {
   bodyLines.push('];');
   const modulesBlock = bodyLines.join('\n');
 
-  const nextContent = `${header}${modulesBlock}\n\n${tail.trimStart()}`;
+  const generated =
+    `${header}export const MODULE_CATALOG_CORE_VERSION = '${actualVersion}';\n\n` +
+    `${modulesBlock}\n\n${tail.trimStart()}`;
+  const nextContent = await format(generated, {
+    ...(await resolveConfig(modulesFile)),
+    filepath: modulesFile,
+  });
+  if (process.argv.includes('--check')) {
+    if (nextContent !== fileContent) {
+      throw new Error('Offline module catalog is out of sync. Run npm run sync:modules.');
+    }
+    console.log(
+      `Offline catalog matches Core ${actualVersion} (${payload.modules.length} modules).`
+    );
+    return;
+  }
   await fs.writeFile(modulesFile, nextContent, 'utf-8');
 
   console.log(

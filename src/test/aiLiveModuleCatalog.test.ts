@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildModuleListForPrompt, findLiveModuleBySlug } from '../core/aiLiveModuleCatalog';
+import { MODULES, MODULE_CATALOG_CORE_VERSION } from '../data/modules';
 
 describe('aiLiveModuleCatalog', () => {
   it('formats live modules grouped by category', () => {
@@ -34,7 +35,12 @@ describe('aiLiveModuleCatalog', () => {
     const section = buildModuleListForPrompt(null);
     expect(section).toContain('fallback');
     expect(section).toContain('free/essentials/settings');
-    expect(section).toContain('rapidkit modules list');
+    expect(section).toContain('workspai modules list --json-schema 1');
+    expect(section).toContain(MODULE_CATALOG_CORE_VERSION);
+    expect(section.match(/free\/[\w/]+/g)?.sort()).toEqual(
+      MODULES.map((entry) => entry.slug).sort()
+    );
+    expect(section).not.toContain('LIVE MODULE CATALOG');
   });
 
   it('finds module by slug case-insensitively', () => {

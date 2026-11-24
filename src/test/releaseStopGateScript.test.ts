@@ -239,11 +239,16 @@ describe('extension marketplace metadata contract', () => {
   it('keeps public positioning aligned with Workspace Intelligence', () => {
     const packageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
 
-    expect(packageJson.displayName).toBe('Workspai – Workspace Intelligence');
+    expect(packageJson.displayName).toBe('Workspai – AI Coding Assistant');
+    expect(`${packageJson.publisher}.${packageJson.name}`).toBe('rapidkit.rapidkit-vscode');
+    expect(packageJson.categories).toEqual(['AI', 'Chat']);
     expect(packageJson.description).toMatch(/AI coding assistant for VS Code/i);
     expect(packageJson.description).toMatch(/workspace intelligence/i);
-    expect(packageJson.description).toMatch(/verified CLI tools/i);
+    expect(packageJson.description).toMatch(/review edits, run project tests/i);
     expect(packageJson.description.length).toBeLessThanOrEqual(200);
+    expect(packageJson.keywords).toContain('ai coding assistant');
+    expect(new Set(packageJson.keywords).size).toBe(packageJson.keywords.length);
+    expect(packageJson.keywords.length).toBeLessThanOrEqual(30);
   });
 });
 

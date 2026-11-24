@@ -1,4 +1,9 @@
 import {
+  CREATE_MODULE_SELECTION_SCHEMA,
+  inspectCreateModuleCatalog,
+  resolveCreateModules,
+} from './projectCreationModules.js';
+import {
   CREATE_PLANNER_CAPABILITIES_CONTRACT,
   CREATE_PLANNER_CAPABILITIES_SCHEMA_VERSION,
   listExecutableCreateKits,
@@ -15,6 +20,7 @@ export const CREATE_CAPABILITY_TOOL_NAMES = {
   inspectContext: 'inspect-create-context',
   listCapabilities: 'list-create-capabilities',
   recommendArchitecture: 'recommend-create-architecture',
+  moduleCatalog: 'inspect-create-module-catalog',
   submitPlan: 'submit-create-plan',
 } as const;
 
@@ -44,6 +50,7 @@ export type CreateCapabilityContext = {
   workspaceName?: string;
   projectName?: string;
   workspaceAvailable: boolean;
+  workspaceTrusted?: boolean;
 };
 
 export type CreateCapabilityPlanningResult =
@@ -81,13 +88,21 @@ const CREATE_PLAN_PROPERTIES = {
   framework: { type: 'string', enum: listExecutableCreateTargets() },
   kit: { type: 'string', enum: listExecutableCreateKits() },
   projectName: { type: 'string', minLength: 2, maxLength: 80 },
-  suggestedModules: {
-    type: 'array',
-    maxItems: 6,
-    items: { type: 'string', minLength: 1, maxLength: 160 },
-  },
+  suggestedModules: CREATE_MODULE_SELECTION_SCHEMA,
   description: { type: 'string', minLength: 1, maxLength: 240 },
 } as const;
+
+const COMPANION_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['framework', 'kit', 'projectName'],
+  properties: {
+    framework: CREATE_PLAN_PROPERTIES.framework,
+    kit: CREATE_PLAN_PROPERTIES.kit,
+    projectName: CREATE_PLAN_PROPERTIES.projectName,
+    suggestedModules: CREATE_MODULE_SELECTION_SCHEMA,
+  },
+};
 
 export const CREATE_CAPABILITY_TOOLS: readonly CreateCapabilityToolDefinition[] = [
   {
@@ -106,7 +121,16 @@ export const CREATE_CAPABILITY_TOOLS: readonly CreateCapabilityToolDefinition[] 
       properties: {
         category: {
           type: 'string',
-          enum: ['all', 'backend', 'frontend', 'desktop', 'agent', 'extension', 'gaming'],
+          enum: [
+            'all',
+            'backend',
+            'frontend',
+            'desktop',
+            'agent',
+            'gateway',
+            'extension',
+            'gaming',
+          ],
         },
       },
     },
@@ -130,9 +154,25 @@ export const CREATE_CAPABILITY_TOOLS: readonly CreateCapabilityToolDefinition[] 
             'full-stack',
             'desktop',
             'agent',
+            'gateway',
             'extension',
           ],
         },
+      },
+    },
+  },
+  {
+    name: CREATE_CAPABILITY_TOOL_NAMES.moduleCatalog,
+    description:
+      'Find RapidKit Core modules compatible with the exact kit. Search by product feature or slug. If nextOffset is present, pass it to get the next page.',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['kit'],
+      properties: {
+        kit: CREATE_PLAN_PROPERTIES.kit,
+        query: { type: 'string', maxLength: 200 },
+        offset: { type: 'integer', minimum: 0 },
       },
     },
   },
@@ -146,16 +186,8 @@ export const CREATE_CAPABILITY_TOOLS: readonly CreateCapabilityToolDefinition[] 
       required: Object.keys(CREATE_PLAN_PROPERTIES),
       properties: {
         ...CREATE_PLAN_PROPERTIES,
-        secondaryProject: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['framework', 'kit', 'projectName'],
-          properties: {
-            framework: { type: 'string', enum: listExecutableCreateTargets() },
-            kit: { type: 'string', enum: listExecutableCreateKits() },
-            projectName: { type: 'string', minLength: 2, maxLength: 80 },
-          },
-        },
+        secondaryProject: COMPANION_SCHEMA,
+        additionalProjects: { type: 'array', maxItems: 6, items: COMPANION_SCHEMA },
       },
     },
   },
@@ -175,7 +207,7 @@ function architectureGuidance(input: Record<string, unknown>): Record<string, un
     decisionRules: [
       'Choose the smallest executable stack that satisfies the product outcome.',
       'A user-facing app alone is frontend; add a backend only when API, persistence, authentication, integration, or server workflow is required or clearly implied.',
-      'A workspace may contain a primary and one companion project when a separate frontend and backend are justified.',
+      'Create can propose up to eight distinct projects in the approved workspace. Use the smallest topology that satisfies the request.',
       'Full-stack topology does not imply polyglot runtime. Prefer Next.js plus NestJS and the node-only profile when technical choices are delegated.',
       'Use the polyglot profile only when the selected projects use different runtime families or the user explicitly requests multiple runtimes.',
       'Use conservative starter features for unspecified choices and expose every assumption in the reviewable plan description.',
@@ -195,6 +227,15 @@ function inspectContext(context: CreateCapabilityContext): Record<string, unknow
       : { available: false },
     project: context.projectName ? { selected: true, name: safeText(context.projectName) } : null,
     stackFocus: safeText(context.stackFocus, 'balanced'),
+    host: {
+      workspaceTrust:
+        context.workspaceTrusted === undefined
+          ? 'not-observed'
+          : context.workspaceTrusted
+            ? 'trusted'
+            : 'restricted',
+      runtimeReadiness: 'checked at execution for the approved destination',
+    },
     authority: {
       planning: 'model-proposal',
       mutation: 'controller-after-explicit-approval',
@@ -215,12 +256,26 @@ function listCapabilities(category: unknown): Record<string, unknown> {
   );
   return {
     schemaVersion: CREATE_PLANNER_CAPABILITIES_SCHEMA_VERSION,
-    executableFrameworks: listExecutableCreateTargets(),
-    executableKits: listExecutableCreateKits(),
-    executablePairs: Object.entries(SCAFFOLD_FRAMEWORK_KITS).map(([framework, kits]) => ({
-      framework,
-      kits,
-    })),
+    executableFrameworks: requestedCategory
+      ? [
+          ...new Set(
+            [...native, ...official]
+              .filter((entry) => !('status' in entry) || entry.status === 'available')
+              .map((entry) => entry.plannerFramework)
+          ),
+        ]
+      : listExecutableCreateTargets(),
+    executableKits: requestedCategory
+      ? [...native, ...official.filter((entry) => entry.canExecuteCreate)].map(({ id }) => id)
+      : listExecutableCreateKits(),
+    ...(!requestedCategory
+      ? {
+          executablePairs: Object.entries(SCAFFOLD_FRAMEWORK_KITS).map(([framework, kits]) => ({
+            framework,
+            kits,
+          })),
+        }
+      : {}),
     native,
     official,
     profiles: CREATE_PLAN_PROPERTIES.profile.enum,
@@ -265,23 +320,42 @@ function validateSubmittedPlan(value: Record<string, unknown>): string | undefin
   if (!installMethods.has(String(value.installMethod))) {
     return `Unsupported install method: ${String(value.installMethod)}.`;
   }
-  if (value.secondaryProject !== undefined) {
-    if (!isRecord(value.secondaryProject)) {
-      return 'The companion project must be an object.';
+  if (
+    value.additionalProjects !== undefined &&
+    (!Array.isArray(value.additionalProjects) || value.additionalProjects.length > 6)
+  ) {
+    return 'Provide at most six additional project objects.';
+  }
+  const projects = [
+    value,
+    ...(value.secondaryProject === undefined ? [] : [value.secondaryProject]),
+    ...(Array.isArray(value.additionalProjects) ? value.additionalProjects : []),
+  ];
+  const names = new Set<string>();
+  for (const project of projects) {
+    if (
+      !isRecord(project) ||
+      typeof project.projectName !== 'string' ||
+      !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(project.projectName)
+    ) {
+      return 'Each project needs a lowercase directory slug of up to 63 characters.';
     }
-    const secondary = value.secondaryProject;
-    if (!frameworks.has(String(secondary.framework))) {
-      return `Unsupported companion framework: ${String(secondary.framework)}.`;
+    if (names.has(project.projectName)) {
+      return 'Project names must be distinct.';
     }
-    const secondaryFramework = secondary.framework as ScaffoldFramework;
-    if (!scaffoldKitsForFramework(secondaryFramework).includes(String(secondary.kit))) {
-      return `Companion kit ${String(secondary.kit)} does not belong to framework ${secondaryFramework}.`;
+    names.add(project.projectName);
+    const framework = String(project.framework);
+    const kit = String(project.kit);
+    if (
+      !frameworks.has(framework) ||
+      !scaffoldKitsForFramework(framework as ScaffoldFramework).includes(kit)
+    ) {
+      return `Kit ${kit} does not belong to executable framework ${framework}.`;
     }
-    if (secondaryFramework === framework) {
-      return 'Primary and companion projects must use different framework lanes.';
-    }
-    if (typeof secondary.projectName !== 'string' || secondary.projectName.trim().length < 2) {
-      return 'The companion project name is missing or invalid.';
+    try {
+      resolveCreateModules(kit, project.suggestedModules);
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
     }
   }
   return undefined;
@@ -296,7 +370,8 @@ function capabilityPrompt(context: CreateCapabilityContext): string {
     '1. Call inspect-create-context.',
     '2. Call list-create-capabilities.',
     '3. Call recommend-create-architecture when product shape or technical choices are delegated or uncertain.',
-    '4. Call submit-create-plan exactly once with the complete proposal.',
+    '4. For a catalog-capable kit, discover modules for the requested features with inspect-create-module-catalog and select exact slugs per project. Use [] when no catalog module is needed.',
+    '5. Call submit-create-plan with the complete proposal, including same-framework and additional projects when requested.',
     '',
     'Enterprise boundaries:',
     '- Tools in this planning loop are read-only. submit-create-plan is a proposal, not execution.',
@@ -334,10 +409,11 @@ export async function runCreateCapabilityPlanning(input: {
   ) => Promise<CreateCapabilityModelAction>;
   maxTurns?: number;
 }): Promise<CreateCapabilityPlanningResult> {
-  const maxTurns = Math.min(Math.max(input.maxTurns ?? 6, 3), 8);
+  const maxTurns = Math.min(Math.max(input.maxTurns ?? 7, 3), 12);
   const messages: AIMessage[] = [{ role: 'user', content: capabilityPrompt(input.context) }];
   const observations: CreateCapabilityToolName[] = [];
   const observed = new Set<CreateCapabilityToolName>();
+  const observedCatalogs = new Set<string>();
   const repeatedCalls = new Map<string, number>();
   const callIds = new Set<string>();
   let provider: string | undefined;
@@ -407,10 +483,40 @@ export async function runCreateCapabilityPlanning(input: {
       result = inspectContext(input.context);
     } else if (tool.name === CREATE_CAPABILITY_TOOL_NAMES.listCapabilities) {
       result = listCapabilities(action.input.category);
+    } else if (tool.name === CREATE_CAPABILITY_TOOL_NAMES.moduleCatalog) {
+      try {
+        const selected = inspectCreateModuleCatalog({
+          kit: String(action.input.kit ?? ''),
+          query:
+            typeof action.input.query === 'string' ? action.input.query.slice(0, 200) : undefined,
+          offset: typeof action.input.offset === 'number' ? action.input.offset : undefined,
+        });
+        result = selected;
+        if (selected.supported) {
+          observedCatalogs.add(selected.kit);
+        }
+      } catch (error) {
+        result = { error: error instanceof Error ? error.message : String(error) };
+      }
     } else if (tool.name === CREATE_CAPABILITY_TOOL_NAMES.recommendArchitecture) {
       result = architectureGuidance(action.input);
     } else {
+      const requestsModules = [
+        action.input,
+        action.input.secondaryProject,
+        ...(Array.isArray(action.input.additionalProjects) ? action.input.additionalProjects : []),
+      ].filter(
+        (project) =>
+          isRecord(project) &&
+          Array.isArray(project.suggestedModules) &&
+          project.suggestedModules.length > 0
+      );
       const missing = [
+        requestsModules.some(
+          (project) => !observedCatalogs.has(String((project as Record<string, unknown>).kit))
+        )
+          ? CREATE_CAPABILITY_TOOL_NAMES.moduleCatalog
+          : null,
         !observed.has(CREATE_CAPABILITY_TOOL_NAMES.inspectContext)
           ? CREATE_CAPABILITY_TOOL_NAMES.inspectContext
           : null,

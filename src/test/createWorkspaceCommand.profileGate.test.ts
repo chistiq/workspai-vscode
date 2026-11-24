@@ -221,7 +221,7 @@ describe('createWorkspaceCommand profile-aware Python gating', () => {
       })
     ).rejects.toMatchObject({
       code: 'python-runtime-unavailable',
-      message: expect.stringContaining('Python 3.10+ is required'),
+      message: expect.stringContaining('Python 3.11 through 3.x is required'),
     });
 
     expect(showWarningMessageMock).not.toHaveBeenCalled();

@@ -142,6 +142,7 @@ export interface Workspace {
 export interface ModulesCatalogMeta {
   source?: 'live' | 'cache' | 'fallback';
   rapidkitCoreVersion?: string;
+  referenceCoreVersion?: string;
   rapidkitCoreLocation?: 'workspace' | 'global' | 'npx';
   workspacePath?: string;
   loadError?: string;

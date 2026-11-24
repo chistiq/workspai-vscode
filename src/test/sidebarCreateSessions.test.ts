@@ -52,17 +52,21 @@ describe('Create tab durable session contract', () => {
     expect(secondary).toContain('activeSession.target === target');
     expect(provider).toContain("payloadRecord.target === 'project' ? 'project' : 'workspace'");
     expect(provider).toContain(
-      "let workspacePath = createTarget === 'project' ? scope.workspacePath : undefined"
+      "const workspacePath = createTarget === 'project' ? selectedWorkspacePath : undefined"
     );
     expect(provider).toContain('await this._readSelectedWorkspaceScope()');
+    expect(provider).toContain('selectorExplicit: payloadRecord.targetExplicit === true');
+    expect(secondary).toContain('        targetExplicit,');
+    expect(createTab).toContain('Draft in selected workspace');
     expect(provider).toContain("executeCommand('workspai.getSelectedWorkspace')");
     expect(provider).toContain('selectedWorkspace?.name?.trim()');
     expect(provider).toMatch(
       /const approvalScope = resolveExplicitWorkspaceScope[\s\S]{0,500}await this\._readSelectedWorkspaceScope\(\)/
     );
-    expect(provider).toContain(
-      'bindCreatePlanDestination(parsedPlan, { workspacePath, workspaceName })'
+    expect(provider).toMatch(
+      /bindCreatePlanDestination\([\s\S]{0,540}\{ workspacePath, workspaceName \}/
     );
+    expect(provider).toContain('workspaceIdentity: destination?.identity');
     expect(createExecution).toContain("if (plan.type === 'workspace')");
     expect(createExecution).toContain('Project creation requires an active selected workspace.');
     expect(provider).toContain('executeApprovedCreatePlan');

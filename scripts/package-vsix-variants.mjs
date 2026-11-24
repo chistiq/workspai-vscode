@@ -153,29 +153,22 @@ function withoutEmbeddedCliRuntime(action) {
 }
 
 function restoreReleaseCliRuntime() {
-  const runtimeRoot = path.join(repositoryRoot, 'dist', 'workspai-runtime');
-  if (fs.existsSync(runtimeRoot)) {
-    return;
-  }
   // vscode:prepublish strips the embedded runtime before vsce packs the
-  // marketplace artifact. Restore it afterward so package:ci first-run smoke
-  // and a local F5 host still have a verified CLI runtime on disk.
+  // marketplace artifact. Rebuild from the current release pin so the first-run
+  // smoke uses that version even if dist contained an older runtime.
   runNode(['scripts/build-bundled-cli-runtime.mjs', '--release']);
 }
 
 function packageRelease() {
-  try {
-    withPinnedReleaseContracts(() => {
-      withoutEmbeddedCliRuntime(() => {
-        packageArtifact({
-          channel: 'release',
-          output: `rapidkit-vscode-${extensionPackage.version}.vsix`,
-        });
+  withPinnedReleaseContracts(() => {
+    withoutEmbeddedCliRuntime(() => {
+      packageArtifact({
+        channel: 'release',
+        output: `rapidkit-vscode-${extensionPackage.version}.vsix`,
       });
     });
-  } finally {
-    restoreReleaseCliRuntime();
-  }
+  });
+  restoreReleaseCliRuntime();
 }
 
 function packageLocal() {

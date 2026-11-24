@@ -344,6 +344,10 @@ describe('actionsWebviewProvider — manifest + command alignment', () => {
 
   it('keeps the Marketplace README concise and aligned with the Workspai Assistant', () => {
     const readme = read('README.md');
+    expect(readme).toMatch(/^# Workspai — AI Coding Assistant for VS Code/);
+    expect(readme).toContain('code --install-extension rapidkit.rapidkit-vscode');
+    expect(readme).toContain('## Install and try your first task');
+    expect(readme).not.toMatch(/^!\[/m);
     expect(readme).toContain('AI coding, grounded in your workspace.');
     expect(readme).toContain('Ask → inspect → change → test → verify');
     expect(readme).toContain('## One assistant, four ways to work');

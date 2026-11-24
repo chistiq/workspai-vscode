@@ -38,6 +38,10 @@ import { studioProjectOnboardingTool } from '../../core/studioProjectOnboarding.
 import {
   studioWorkspaceCreationTool,
   studioProjectCreationTool,
+  studioCreationModuleCatalogTool,
+  assertAvailableProjectDestination,
+  assertCreatedProjectMembership,
+  scaffoldProjectArgs,
   studioWorkspaceBindingTool,
 } from '../../core/studioWorkspaceCreation.js';
 import {
@@ -81,7 +85,7 @@ import {
   UnsupportedCreationStackError,
 } from '../../core/aiService';
 import { ensureManagedDefaultWorkspace } from '../../core/ensureManagedDefaultWorkspace';
-import { createProjectCommand } from '../../commands/createProject';
+import { installCreateModules } from '../../core/projectCreationModules.js';
 import {
   createManagedWorkspace,
   describePortableCreationFailure,
@@ -106,7 +110,7 @@ import {
 } from '../../core/verifiedGoalIntent.js';
 import { type AssistantIntentRoute } from '../../core/assistantIntentRouter.js';
 import { dispatchAssistantTurn } from '../../core/assistantTurn.js';
-import { routeCreateIntent } from '../../core/createIntentRouter.js';
+import { resolveCreatePlanningTarget, routeCreateIntent } from '../../core/createIntentRouter.js';
 import {
   runCreateCapabilityPlanning,
   type CreateCapabilityToolDefinition,
@@ -119,6 +123,8 @@ import {
 import { bindCreatePlanDestination } from '../../core/createPlanDestination.js';
 import {
   CreateExecutionCapabilityError,
+  creationPlanProjects,
+  resolveCreatePlanWorkspaceProfile,
   describeCreateExecutionFailure,
   executeApprovedCreatePlan,
 } from '../../core/createExecutionCapability.js';
@@ -644,6 +650,15 @@ async function readWorkspaceProfileFromManifest(
   } catch {
     return undefined;
   }
+}
+
+async function readCreateWorkspaceIdentity(workspacePath: string) {
+  const canonical = await fs.realpath(workspacePath);
+  const stat = await fs.stat(canonical);
+  if (!stat.isDirectory()) {
+    throw new Error('Select an accessible Workspai workspace directory.');
+  }
+  return { path: canonical, identity: `${stat.dev}:${stat.ino}` };
 }
 
 async function syncWorkspaceAfterInlineCreate(workspacePath: string): Promise<void> {
@@ -1963,8 +1978,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         : undefined;
     const sessionId =
       typeof payloadRecord.sessionId === 'string' ? payloadRecord.sessionId.trim() : undefined;
-    let createTarget: 'workspace' | 'project' =
-      payloadRecord.target === 'project' ? 'project' : 'workspace';
+    const selectedTarget = payloadRecord.target === 'project' ? 'project' : 'workspace';
     const history = Array.isArray(payloadRecord.history)
       ? payloadRecord.history
           .filter(
@@ -2001,29 +2015,20 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
     });
     try {
       const scope = resolveExplicitWorkspaceScope(payloadRecord.scope);
-      let workspacePath = createTarget === 'project' ? scope.workspacePath : undefined;
-      let workspaceName = createTarget === 'project' ? scope.workspaceName : undefined;
-      if (createTarget === 'project' && !workspacePath) {
-        // The webview scope is a display snapshot, not the source of truth. A
-        // scope message can be missed while the webview mounts or lag one
-        // selection event behind. Resolve the canonical Explorer selection at
-        // the mutation boundary before claiming no workspace is selected.
-        const selectedWorkspace = await this._readSelectedWorkspaceScope();
-        const selectedWorkspacePath = selectedWorkspace?.path?.trim();
-        if (selectedWorkspacePath) {
-          workspacePath = selectedWorkspacePath;
-          workspaceName = selectedWorkspace?.name?.trim() || path.basename(selectedWorkspacePath);
-          // Heal the UI snapshot too, so the approved plan and any subsequent
-          // Create request display the same destination the host authorized.
-          void this._sendInlineScope();
-        }
+      const selectedWorkspace = scope.workspacePath
+        ? { path: scope.workspacePath, name: scope.workspaceName }
+        : await this._readSelectedWorkspaceScope();
+      const selectedWorkspacePath = selectedWorkspace?.path?.trim() || undefined;
+      if (selectedWorkspacePath && !scope.workspacePath) {
+        // The UI can request a plan before its initial scope message arrives.
+        void this._sendInlineScope();
       }
       const route = await routeCreateIntent({
         request: prompt,
-        selectedTarget: createTarget,
+        selectedTarget,
         stackFocus,
-        workspaceName: workspaceName ?? scope.workspaceName,
-        projectName: undefined,
+        workspaceName: selectedWorkspace?.name,
+        projectName: scope.projectName,
         history,
         complete: async ({ prompt: routePrompt, toolName, toolSchema }) => {
           const response = await askConfiguredAIProviderForToolAction(
@@ -2039,7 +2044,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
             ],
             planningTokenSource.token,
             requestedModelId,
-            [{ path: workspacePath, token: '$WORKSPACE' }]
+            [{ path: selectedWorkspacePath, token: '$WORKSPACE' }]
           );
           return response.type === 'tool'
             ? { type: 'tool', toolName: response.toolName, input: response.input }
@@ -2065,29 +2070,27 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         });
         return;
       }
-      // The selector is a default. Resolve the user's destination before the
-      // planner or approval binding can turn that default into mutation authority.
-      createTarget = route.creationTarget ?? createTarget;
-      if (createTarget === 'workspace') {
-        workspacePath = undefined;
-        workspaceName = undefined;
-      } else if (!workspacePath) {
-        const selected = scope.workspacePath
-          ? { path: scope.workspacePath, name: scope.workspaceName }
-          : await this._readSelectedWorkspaceScope();
-        workspacePath = selected?.path?.trim();
-        workspaceName = selected?.name?.trim();
-      }
-      if (createTarget === 'project' && !workspacePath) {
-        this._postInlineCreate('sidebarAiCreateError', {
-          error:
-            'Select the workspace that should own this project, then draft the project plan again.',
-          failureCode: 'workspace-selection-required',
-          retryable: false,
+      const createTarget = resolveCreatePlanningTarget({
+        requestedDestination: route.creationTarget,
+        selectedTarget,
+        selectorExplicit: payloadRecord.targetExplicit === true,
+        workspaceAvailable: Boolean(selectedWorkspacePath),
+      });
+      if (createTarget === 'select-workspace') {
+        this._postInlineCreate('sidebarAiCreateGuidance', {
+          response: 'Select the existing workspace for this project, then draft the plan here.',
+          intent: 'create',
+          confidence: 'high',
+          action: 'select-workspace',
+          request: prompt,
           sessionId,
         });
         return;
       }
+      const workspacePath = createTarget === 'project' ? selectedWorkspacePath : undefined;
+      const workspaceName = workspacePath
+        ? selectedWorkspace?.name?.trim() || path.basename(workspacePath)
+        : undefined;
       const creationPrompt =
         stackFocus && stackFocus !== 'Any stack'
           ? `${route.normalizedRequest}\n\nStack focus: ${stackFocus}`
@@ -2127,8 +2130,9 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
           selectedTarget: createTarget,
           stackFocus,
           workspaceName,
-          projectName: undefined,
+          projectName: scope.projectName,
           workspaceAvailable: Boolean(workspacePath),
+          workspaceTrusted: vscode.workspace.isTrusted,
         },
         callModel: async (messages, tools: readonly CreateCapabilityToolDefinition[]) => {
           const response = await askConfiguredAIProviderForToolAction(
@@ -2149,32 +2153,50 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       if (planningTokenSource.token.isCancellationRequested) {
         throw new vscode.CancellationError();
       }
-      const normalized =
-        capabilityPlanning.status === 'submitted'
-          ? await parseCreationIntent(
-              creationPrompt,
-              createTarget,
-              undefined,
-              workspacePath,
-              undefined,
-              async () => ({
-                text: JSON.stringify(capabilityPlanning.draft),
-                modelId: capabilityPlanning.provider,
-              })
-            )
-          : await parseCreationIntent(
-              creationPrompt,
-              createTarget,
-              undefined,
-              workspacePath,
-              undefined,
-              configuredTextProvider
-            );
+      const normalized = await parseCreationIntent(
+        creationPrompt,
+        createTarget,
+        undefined,
+        workspacePath,
+        undefined,
+        configuredTextProvider,
+        undefined,
+        {
+          originalRequest: prompt,
+          ...(capabilityPlanning.status === 'submitted'
+            ? {
+                preparedDraft: {
+                  draft: capabilityPlanning.draft,
+                  modelId: capabilityPlanning.provider,
+                },
+              }
+            : {}),
+        }
+      );
       if (planningTokenSource.token.isCancellationRequested) {
         throw new vscode.CancellationError();
       }
       const { plan: parsedPlan, modelId, planSource } = normalized;
-      const plan = bindCreatePlanDestination(parsedPlan, { workspacePath, workspaceName });
+      const destination = workspacePath
+        ? await readCreateWorkspaceIdentity(workspacePath)
+        : undefined;
+      if (destination) {
+        for (const project of creationPlanProjects(parsedPlan)) {
+          await assertAvailableProjectDestination(destination.path, project.projectName);
+        }
+      }
+      const plan = bindCreatePlanDestination(
+        parsedPlan.type === 'workspace'
+          ? {
+              ...parsedPlan,
+              profile: resolveCreatePlanWorkspaceProfile(
+                parsedPlan,
+                resolveCreationProfile(parsedPlan.profile, parsedPlan.framework)
+              ),
+            }
+          : parsedPlan,
+        { workspacePath, workspaceName }
+      );
       if (capabilityPlanning.status === 'fallback') {
         Logger.getInstance().warn(
           `[Create] Capability planning used the compatibility fallback: ${capabilityPlanning.reason}`
@@ -2186,7 +2208,8 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         sessionId: planSessionId,
         scopeBinding: createScopeBinding({
           target: plan.type,
-          workspacePath: plan.type === 'project' ? workspacePath : undefined,
+          workspacePath: destination?.path,
+          workspaceIdentity: destination?.identity,
         }),
       });
       const authorizedPlan = { ...plan, authorization };
@@ -2268,6 +2291,16 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
+    if (vscode.workspace.isTrusted === false) {
+      this._postInlineCreate('sidebarAiCreateError', {
+        error: 'Trust the VS Code workspace before running a creation plan.',
+        failureCode: 'workspace-untrusted',
+        retryable: false,
+        sessionId,
+      });
+      return;
+    }
+
     const rawPlanRecord = rawPlan as AICreationPlan & { authorization?: unknown };
     const authorization = parseCreatePlanAuthorization(rawPlanRecord.authorization);
     const approvalScope = resolveExplicitWorkspaceScope(payloadRecord.scope);
@@ -2292,13 +2325,29 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       });
       return;
     }
+    let destination: Awaited<ReturnType<typeof readCreateWorkspaceIdentity>> | undefined;
+    try {
+      if (approvalTarget === 'project' && approvalScope.workspacePath) {
+        destination = await readCreateWorkspaceIdentity(approvalScope.workspacePath);
+      }
+    } catch {
+      this._postInlineCreate('sidebarAiCreateError', {
+        error:
+          'The approved workspace directory is no longer accessible. Select a workspace and draft the plan again.',
+        failureCode: 'workspace-selection-required',
+        retryable: false,
+        sessionId,
+      });
+      return;
+    }
     const approval = this._createPlanApprovals.begin({
       authorization,
       sessionId: sessionId || 'create-session',
       target: approvalTarget,
       scopeBinding: createScopeBinding({
         target: approvalTarget,
-        workspacePath: approvalTarget === 'project' ? approvalScope.workspacePath : undefined,
+        workspacePath: destination?.path,
+        workspaceIdentity: destination?.identity,
       }),
     });
     if (!approval.ok) {
@@ -2315,19 +2364,55 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
       const plan = validateCreationPlanForExecution(approval.plan);
       const execution = await executeApprovedCreatePlan({
         plan,
-        selectedWorkspacePath: approvalScope.workspacePath,
+        selectedWorkspacePath: destination?.path,
         host: {
           createWorkspace: createManagedWorkspace,
-          createProject: async (project) => {
-            await createProjectCommand(
-              project.workspacePath,
-              project.framework,
-              project.projectName,
-              project.kit,
-              { suppressPostCreatePrompt: true, silent: true }
-            );
+          preflightProjects: async (workspacePath, projects) => {
+            const current = await readCreateWorkspaceIdentity(workspacePath);
+            if (
+              destination &&
+              (current.path !== destination.path || current.identity !== destination.identity)
+            ) {
+              throw new Error('The selected workspace changed after approval.');
+            }
+            for (const project of projects) {
+              await assertAvailableProjectDestination(current.path, project.projectName);
+            }
           },
-          projectPath: (workspacePath, projectName) => path.join(workspacePath, projectName),
+          createProject: async (project) => {
+            const current = await readCreateWorkspaceIdentity(project.workspacePath);
+            if (
+              destination &&
+              (current.path !== destination.path || current.identity !== destination.identity)
+            ) {
+              throw new Error('The selected workspace changed after approval.');
+            }
+            const workspace = current.path;
+            const target = await assertAvailableProjectDestination(workspace, project.projectName);
+            const run = async (command: string[], cwd: string) => {
+              const result = await runRapidkitStreaming({
+                command,
+                cwd,
+                featureLabel: 'Approved project creation',
+                timeoutMs: 600_000,
+                deferCoreModuleLockSync: command[0] === 'add' && command[1] === 'module',
+              });
+              if (result.failed || result.exitCode !== 0) {
+                throw new Error(
+                  result.stderr.slice(-1500) ||
+                    result.stdout.slice(-1500) ||
+                    `Workspai exited with code ${result.exitCode}.`
+                );
+              }
+            };
+            await run(
+              scaffoldProjectArgs({ name: project.projectName, kit: project.kit }),
+              workspace
+            );
+            await assertCreatedProjectMembership(workspace, target);
+            const installedModules = await installCreateModules(target, project.modules ?? [], run);
+            return { path: target, installedModules };
+          },
           syncIntelligence: syncWorkspaceAfterInlineCreate,
           refreshProjects: async () => {
             await vscode.commands.executeCommand('workspai.refreshProjects');
@@ -5096,6 +5181,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
               command: args,
               cwd,
               featureLabel: 'Assistant project lifecycle',
+              deferCoreModuleLockSync: args[0] === 'add' && args[1] === 'module',
               timeoutMs: 600_000,
               signal: {
                 onCancelled(listener) {
@@ -5131,6 +5217,7 @@ export class ActionsWebviewProvider implements vscode.WebviewViewProvider {
         })
       );
       registry.register(studioWorkspaceBindingTool({ onWorkspaceReady }));
+      registry.register(studioCreationModuleCatalogTool());
       registry.register(studioWorkspaceCreationTool({ run: runOnboardingCli, onWorkspaceReady }));
       registry.register(
         studioProjectCreationTool({ run: runOnboardingCli, onTargetReady: onWorkspaceReady })

@@ -2087,6 +2087,7 @@ export function SecondarySidebar() {
             action:
               data.action === 'plan-workspace' ||
               data.action === 'plan-project' ||
+              data.action === 'select-workspace' ||
               data.action === 'adopt-project' ||
               data.action === 'import-project' ||
               data.action === 'import-workspace' ||
@@ -3042,7 +3043,12 @@ export function SecondarySidebar() {
   }, []);
 
   // ---- Create handlers ----
-  const handleSubmitPrompt = (prompt: string, stackFocus: string, target: CreateTarget) => {
+  const handleSubmitPrompt = (
+    prompt: string,
+    stackFocus: string,
+    target: CreateTarget,
+    targetExplicit: boolean
+  ) => {
     const activeSession = create.sessions.find((session) => session.sessionId === create.activeId);
     const lastMessage = activeSession?.messages[activeSession.messages.length - 1];
     const continuesGuidance =
@@ -3094,6 +3100,7 @@ export function SecondarySidebar() {
         modelId: selectedModelId ?? undefined,
         stackFocus,
         target,
+        targetExplicit,
         sessionId,
         history,
         scope:

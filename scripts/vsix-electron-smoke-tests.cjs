@@ -1,6 +1,5 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const vscode = require('vscode');
@@ -26,50 +25,58 @@ exports.run = async function run() {
   await extension.activate();
   assert.equal(extension.isActive, true, `Expected packaged extension to activate: ${extensionId}`);
 
-  const runtimeRoot = path.join(extension.extensionPath, 'dist', 'workspai-runtime');
-  const runtimeManifest = JSON.parse(
-    fs.readFileSync(path.join(runtimeRoot, 'manifest.json'), 'utf8')
+  const policy = JSON.parse(
+    fs.readFileSync(
+      path.join(extension.extensionPath, 'contracts', 'extension-cli-release-policy.v1.json'),
+      'utf8'
+    )
   );
-  const runtimeEntry = path.join(runtimeRoot, runtimeManifest.entry);
-  const runtimeProbe = spawnSync(process.execPath, [runtimeEntry, 'commands', '--json'], {
-    cwd: extension.extensionPath,
-    encoding: 'utf8',
-    timeout: 30_000,
-    env: {
-      ...process.env,
-      ELECTRON_RUN_AS_NODE: '1',
-      WORKSPAI_EXTENSION_RUNTIME: '1',
-    },
-  });
-  assert.equal(
-    runtimeProbe.status,
-    0,
-    `Expected embedded CLI to run under Electron: ${runtimeProbe.stderr || runtimeProbe.error?.message || 'unknown failure'}`
+  const runtimeRoot = path.join(
+    process.env.WORKSPAI_SMOKE_USER_DATA,
+    'User',
+    'globalStorage',
+    extensionId.toLowerCase(),
+    'official-cli',
+    policy.verifiedCliVersion
   );
-  const runtimeCapabilities = JSON.parse(runtimeProbe.stdout);
+  const runtimeEntry = path.join(runtimeRoot, 'launcher.cjs');
+  assert.ok(
+    fs.existsSync(path.join(runtimeRoot, 'install.json')),
+    'Production activation must acquire the pinned npm package.'
+  );
+
+  const workspace = process.env.WORKSPAI_SMOKE_WORKSPACE;
+  const runCli = (cwd, args) => {
+    const result = spawnSync(process.execPath, [runtimeEntry, ...args], {
+      cwd,
+      encoding: 'utf8',
+      timeout: 30_000,
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', WORKSPAI_EXTENSION_RUNTIME: '1' },
+    });
+    assert.equal(
+      result.status,
+      0,
+      `Workspai ${args.slice(0, 3).join(' ')} failed: ${result.stderr || result.error?.message || result.stdout}`
+    );
+    return JSON.parse(result.stdout);
+  };
+  const version = runCli(workspace, ['--version', '--json']);
+  assert.equal(version.version, policy.verifiedCliVersion);
+  const runtimeCapabilities = runCli(workspace, ['commands', '--json']);
   const doctorCapability = runtimeCapabilities.commandMap?.doctor;
   assert.ok(
     doctorCapability === true ||
       (doctorCapability?.command === 'doctor' && doctorCapability?.status === 'supported'),
-    'Expected embedded CLI to advertise the Doctor capability under Electron.'
+    'Expected the official CLI to advertise the Doctor capability under Electron.'
   );
-  const terminalTemplateBin = path.join(runtimeRoot, runtimeManifest.terminal.bin);
-  const terminalSmokeBin = fs.mkdtempSync(path.join(os.tmpdir(), 'workspai-vsix-terminal-smoke-'));
-  for (const launcherName of ['workspai', 'workspai.cmd']) {
-    fs.copyFileSync(
-      path.join(terminalTemplateBin, launcherName),
-      path.join(terminalSmokeBin, launcherName)
-    );
-  }
-  if (process.platform !== 'win32') {
-    fs.chmodSync(path.join(terminalSmokeBin, 'workspai'), 0o700);
-  }
+
   const terminalLauncher = path.join(
-    terminalSmokeBin,
-    process.platform === 'win32' ? 'workspai.cmd' : runtimeManifest.terminal.command
+    runtimeRoot,
+    'terminal-bin',
+    process.platform === 'win32' ? 'workspai.cmd' : 'workspai'
   );
   const terminalProbe = spawnSync(terminalLauncher, ['--version'], {
-    cwd: extension.extensionPath,
+    cwd: workspace,
     encoding: 'utf8',
     shell: process.platform === 'win32',
     timeout: 30_000,
@@ -79,16 +86,65 @@ exports.run = async function run() {
       WORKSPAI_EXTENSION_NODE: process.execPath,
     },
   });
-  fs.rmSync(terminalSmokeBin, { recursive: true, force: true });
   assert.equal(
     terminalProbe.status,
     0,
-    `Expected terminal-scoped Workspai launcher to run under Electron: ${terminalProbe.stderr || terminalProbe.error?.message || 'unknown failure'}`
+    `Expected the terminal-scoped launcher to run under Electron: ${terminalProbe.stderr || terminalProbe.error?.message || 'unknown failure'}`
   );
-  assert.ok(
-    terminalProbe.stdout.includes(runtimeManifest.cli.version),
-    'Expected terminal-scoped Workspai launcher to use the embedded CLI version.'
+  assert.ok(terminalProbe.stdout.includes(policy.verifiedCliVersion));
+
+  const fixtureParent = path.dirname(workspace);
+  const created = runCli(fixtureParent, [
+    'create',
+    'workspace',
+    'first-run',
+    '--output',
+    fixtureParent,
+    '--profile',
+    'minimal',
+    '--skip-python-engine',
+    '--skip-git',
+    '--yes',
+    '--json',
+  ]);
+  assert.equal(created.status, 'success');
+  assert.ok(fs.existsSync(path.join(fixtureParent, 'first-run', '.workspai-workspace')));
+  const source = path.join(fixtureParent, 'standalone');
+  fs.mkdirSync(source);
+  fs.writeFileSync(
+    path.join(source, 'package.json'),
+    JSON.stringify({
+      name: 'standalone',
+      scripts: { test: 'node --test', 'test:size': 'node --test size.test.js' },
+    })
   );
+  fs.writeFileSync(path.join(source, 'size.test.js'), "require('node:test')('size', () => {});\n");
+  const route = runCli(source, [
+    'agent',
+    'context',
+    '--project',
+    source,
+    '--task',
+    'Run the size test',
+    '--path',
+    'size.test.js',
+    '--view',
+    'route',
+    '--strict',
+  ]);
+  assert.equal(route.schemaVersion, 'workspai.agent-task-route.v1');
+  assert.equal(route.scope?.binding, 'not-workspai-managed');
+  assert.equal(route.execution?.projectRoot?.relativePath, '.');
+  const check = route.actions?.find((action) => action.id === 'lifecycle.test');
+  assert.equal(check?.command, 'npm run test:size');
+  assert.equal(check?.focus, 'size.test.js');
+  const observedCheck = spawnSync(process.execPath, ['--test', 'size.test.js'], {
+    cwd: source,
+    encoding: 'utf8',
+    timeout: 10_000,
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+  });
+  assert.equal(observedCheck.status, 0, observedCheck.stderr || observedCheck.error?.message);
 
   const commands = await vscode.commands.getCommands(true);
   for (const command of [

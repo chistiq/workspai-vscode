@@ -960,7 +960,7 @@ function studioProjectCreationGuidance(context: StudioAgentModelContext): string
   if (!context.tools.some(({ name }) => name === 'create-project-in-workspace')) {
     return '';
   }
-  return 'For a supported kit in the current Workspai workspace, use create-project-in-workspace. A terminal opened from a selected project uses that project directory, not the workspace root. For a separate workspace use create-workspace. When the user delegated choices, select reasonable defaults and a name that reflects the requested app. Preserve all requested features in implementation and checks after the scaffold; scaffolding alone does not complete an app.';
+  return 'For a supported kit in the current Workspai workspace, use create-project-in-workspace. A terminal opened from a selected project uses that project directory, not the workspace root. For a separate workspace use create-workspace. When the user delegated choices, select reasonable defaults and a name that reflects the requested app. For catalog-capable kits, look up the features the user needs with inspect-create-module-catalog and include exact module slugs for each project in the creation tool. The approval shows dependent modules. For other kits use their native dependencies. Preserve all requested features in implementation and checks after the scaffold; scaffolding alone does not complete an app.';
 }
 
 function promptForTurn(

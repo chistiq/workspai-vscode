@@ -233,9 +233,13 @@ describe('Create capability host', () => {
       'inspect-create-context',
       'list-create-capabilities',
       'recommend-create-architecture',
+      'inspect-create-module-catalog',
       'submit-create-plan',
     ]);
-    expect(CREATE_CAPABILITY_TOOLS[3]?.description).toContain('non-mutating');
+    expect(
+      CREATE_CAPABILITY_TOOLS.find(({ name }) => name === CREATE_CAPABILITY_TOOL_NAMES.submitPlan)
+        ?.description
+    ).toContain('non-mutating');
     expect(CREATE_CAPABILITY_TOOLS.map((entry) => entry.name)).not.toContain('execute-create-plan');
   });
 

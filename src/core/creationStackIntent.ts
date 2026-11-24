@@ -10,6 +10,7 @@ import {
   isFrontendScaffoldFramework,
   scaffoldRuntimeCandidatesForKit,
   scaffoldRuntimeForFramework,
+  scaffoldKitsForFramework,
   type ScaffoldFramework,
 } from './scaffoldKits';
 
@@ -133,6 +134,9 @@ const POLYGLOT_SIGNALS = [
   'multi-runtime',
 ];
 
+const PERSIAN_FULL_STACK =
+  /\u0641\u0648\u0644[\s\u200c-]*\u0627?\u0633\u062a[\u06cc\u064a]?\u06a9/u;
+
 const EXPLICIT_MULTI_RUNTIME_SIGNALS = [
   'polyglot',
   'multiple runtimes',
@@ -154,6 +158,45 @@ const ENTERPRISE_SIGNALS = [
 
 export function defaultProfileForFramework(framework: ScaffoldFramework): AICreateProfile {
   return defaultWorkspaceProfileForFramework(framework);
+}
+
+/** Preserve an explicit kit or unambiguous runtime selection over model defaults. */
+export function explicitCreationKit(
+  framework: ScaffoldFramework,
+  request: string
+): string | undefined {
+  if (!isScaffoldFramework(framework)) {
+    return undefined;
+  }
+  const lower = request.toLowerCase();
+  const kits = scaffoldKitsForFramework(framework);
+  const explicit = kits.filter((kit) => lower.match(/[a-z0-9][a-z0-9_.-]*/g)?.includes(kit));
+  if (explicit.length === 1) {
+    return explicit[0];
+  }
+  if (framework === 'go') {
+    const gin = /\bgin\b/.test(lower);
+    const fiber = /\bfiber\b/.test(lower);
+    return gin === fiber ? undefined : gin ? 'gogin.standard' : 'gofiber.standard';
+  }
+  if (framework === 'fastapi' && /\b(ddd|domain[- ]driven|clean[- ]architecture)\b/.test(lower)) {
+    return 'fastapi.ddd';
+  }
+  if (framework === 'openrouter' || isAgentScaffoldFramework(framework)) {
+    const suffixes = [
+      [/\bpython\b|\u067e\u0627\u06cc\u062a\u0648\u0646/u, 'python'],
+      [
+        /\b(?:typescript|javascript|node(?:\.js|js)?)\b|\u062a\u0627\u06cc\u067e\u200c?\u0627\u0633\u06a9\u0631\u06cc\u067e\u062a/u,
+        'typescript',
+      ],
+      [/(?:\.net|\bdotnet\b|\bcsharp\b|c#)/i, 'dotnet'],
+    ] as const;
+    const matches = suffixes.filter(([pattern]) => pattern.test(lower));
+    if (matches.length === 1) {
+      return kits.find((kit) => kit.endsWith(`.${matches[0][1]}`));
+    }
+  }
+  return undefined;
 }
 
 export function defaultKitForFramework(framework: ScaffoldFramework, promptLower: string): string {
@@ -221,7 +264,8 @@ export function inferStackIntentFromPrompt(
 
   const enterpriseScore = countSignals(promptLower, ENTERPRISE_SIGNALS);
   const agentScore = countSignals(promptLower, GENERIC_AGENT_SIGNALS);
-  const polyglotScore = countSignals(promptLower, POLYGLOT_SIGNALS);
+  const fullStack =
+    PERSIAN_FULL_STACK.test(promptLower) || countSignals(promptLower, POLYGLOT_SIGNALS) > 0;
   const frontendScore =
     countSignals(promptLower, GENERIC_FRONTEND_SIGNALS) +
     countFrameworkSignals(promptLower, 'frontend');
@@ -234,7 +278,7 @@ export function inferStackIntentFromPrompt(
     return 'agent';
   }
   // Full-stack signals win over governance-only enterprise cues (e.g. governance portal + Next + Nest).
-  if (polyglotScore > 0 || (frontendScore > 0 && backendScore > 0)) {
+  if (fullStack || (frontendScore > 0 && backendScore > 0)) {
     return 'polyglot';
   }
   if (enterpriseScore > 0) {
@@ -467,6 +511,47 @@ export function inferExplicitCreationFrameworks(prompt: string): ScaffoldFramewo
   return (Object.keys(FRAMEWORK_KEYWORDS) as ScaffoldFramework[]).filter(
     (framework) => scoreFrameworkInPrompt(promptLower, framework) > 0
   );
+}
+
+export function namedCreationFrameworks(prompt: string): ScaffoldFramework[] {
+  const variants = new Set(prompt.toLowerCase().match(/[a-z0-9][a-z0-9_.-]*/g));
+  const vendorPatterns: Partial<Record<ScaffoldFramework, RegExp>> = {
+    openrouter: /\bopenrouter\b/,
+    'openai-agents': /\bopenai agents?\b/,
+    'google-adk': /\bgoogle (?:adk|agent development kit)\b/,
+    'microsoft-agent-framework': /\bmicrosoft agent framework\b/,
+    nextjs: /\bnext[. ]?js\b/,
+    fastapi: /\bfastapi\b/,
+    nestjs: /\bnest[. ]?js\b/,
+    go: /\b(?:golang|go (?:api|backend|service|project)|gin|gofiber)\b/,
+    dotnet: /(?:\.net|\bdotnet\b|\bcsharp\b|c#)/i,
+  };
+  const lower = prompt.toLowerCase();
+  const named = (Object.keys(FRAMEWORK_KEYWORDS) as ScaffoldFramework[]).filter(
+    (framework) =>
+      (framework !== 'go' && variants.has(framework)) ||
+      scaffoldKitsForFramework(framework).some((kit) => variants.has(kit)) ||
+      vendorPatterns[framework]?.test(lower)
+  );
+  const agent = named.some(isAgentScaffoldFramework);
+  const desktop = named.includes('tauri');
+  return named.filter((framework) => {
+    if (
+      framework === 'dotnet' &&
+      agent &&
+      !/\basp\.net\b|(?:\.net|dotnet) (?:api|service|backend)\b/.test(lower)
+    ) {
+      return false;
+    }
+    if (
+      framework === 'rust' &&
+      desktop &&
+      !/\b(?:axum|rust (?:api|service|backend))\b/.test(lower)
+    ) {
+      return false;
+    }
+    return true;
+  });
 }
 
 function bestFrontendFrameworkInPrompt(promptLower: string): ScaffoldFramework | undefined {

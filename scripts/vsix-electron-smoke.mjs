@@ -6,7 +6,10 @@ import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import cp from 'child_process';
 import AdmZip from 'adm-zip';
-import { downloadAndUnzipVSCode } from '@vscode/test-electron';
+import {
+  downloadAndUnzipVSCode,
+  resolveCliPathFromVSCodeExecutablePath,
+} from '@vscode/test-electron';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
@@ -123,32 +126,33 @@ function prepareSmokeWorkspace(root) {
   return workspacePath;
 }
 
-function extractExtension(artifactPath, root) {
+function readExtension(artifactPath) {
   const zip = new AdmZip(artifactPath);
-  const extensionDir = path.join(root, 'extension');
-  zip.extractAllTo(root, true);
-  const packagePath = path.join(extensionDir, 'package.json');
-  if (!fs.existsSync(packagePath)) {
-    throw new Error(`VSIX extraction did not produce extension/package.json from ${artifactPath}`);
+  const packageEntry = zip.getEntry('extension/package.json');
+  if (!packageEntry) {
+    throw new Error(`Missing extension/package.json in ${artifactPath}`);
   }
-  const packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
+  const packageJson = JSON.parse(packageEntry.getData().toString('utf8'));
   if (packageJson.main !== './dist/extension.js') {
     throw new Error(`Packaged extension main must be ./dist/extension.js, got ${packageJson.main}`);
   }
-  return {
-    extensionDir,
-    extensionId: `${packageJson.publisher}.${packageJson.name}`,
-  };
+  return `${packageJson.publisher}.${packageJson.name}`;
 }
 
-function runVsCodeSmoke({
-  vscodeExecutablePath,
-  extensionDir,
-  extensionTestsPath,
-  workspaceUri,
-  env,
-  root,
-}) {
+function installVsix(vscodeExecutablePath, artifactPath, profileArgs) {
+  const result = cp.spawnSync(
+    resolveCliPathFromVSCodeExecutablePath(vscodeExecutablePath),
+    [...profileArgs, '--install-extension', artifactPath],
+    { timeout: 60_000, encoding: 'utf8', shell: process.platform === 'win32' }
+  );
+  if (result.error || result.status !== 0) {
+    throw new Error(
+      `VSIX installation failed: ${result.error?.message || result.stderr || result.stdout}`
+    );
+  }
+}
+
+function runVsCodeSmoke({ vscodeExecutablePath, driverDirectory, workspaceUri, env, profileArgs }) {
   const childEnv = { ...process.env, ...env };
   delete childEnv.ELECTRON_RUN_AS_NODE;
   const args = [
@@ -158,10 +162,9 @@ function runVsCodeSmoke({
     '--skip-welcome',
     '--skip-release-notes',
     '--disable-workspace-trust',
-    `--extensionTestsPath=${extensionTestsPath}`,
-    `--extensionDevelopmentPath=${extensionDir}`,
-    `--extensions-dir=${path.join(root, 'extensions')}`,
-    `--user-data-dir=${path.join(root, 'user-data')}`,
+    `--extensionDevelopmentPath=${driverDirectory}`,
+    `--extensionTestsPath=${path.join(driverDirectory, 'test.cjs')}`,
+    ...profileArgs,
     '--folder-uri',
     workspaceUri,
   ];
@@ -217,24 +220,46 @@ async function main() {
   }
 
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'workspai-vsix-electron-'));
-  const { extensionDir, extensionId } = extractExtension(artifactPath, tempRoot);
-  const workspacePath = prepareSmokeWorkspace(tempRoot);
-  const workspaceUri = pathToFileURL(workspacePath).toString();
-  const vscodeExecutablePath = await downloadAndUnzipVSCode({
-    version: options.version,
-  });
-
-  await runVsCodeSmoke({
-    vscodeExecutablePath,
-    extensionDir,
-    extensionTestsPath: path.join(repoRoot, 'scripts', 'vsix-electron-smoke-tests.cjs'),
-    workspaceUri,
-    root: tempRoot,
-    env: {
-      WORKSPAI_SMOKE_EXTENSION_ID: extensionId,
-      WORKSPAI_SMOKE_WORKSPACE: workspacePath,
-    },
-  });
+  const extensionId = readExtension(artifactPath);
+  const userDataDirectory = path.join(tempRoot, 'user-data');
+  const profileArgs = [
+    `--extensions-dir=${path.join(tempRoot, 'extensions')}`,
+    `--user-data-dir=${userDataDirectory}`,
+  ];
+  try {
+    const workspacePath = prepareSmokeWorkspace(tempRoot);
+    const driverDirectory = path.join(tempRoot, 'test-driver');
+    fs.mkdirSync(driverDirectory);
+    fs.writeFileSync(
+      path.join(driverDirectory, 'package.json'),
+      JSON.stringify({
+        name: 'workspai-smoke-driver',
+        publisher: 'local-test',
+        version: '0.0.1',
+        engines: { vscode: '^1.106.0' },
+      })
+    );
+    fs.copyFileSync(
+      path.join(repoRoot, 'scripts', 'vsix-electron-smoke-tests.cjs'),
+      path.join(driverDirectory, 'test.cjs')
+    );
+    const vscodeExecutablePath = await downloadAndUnzipVSCode({ version: options.version });
+    installVsix(vscodeExecutablePath, artifactPath, profileArgs);
+    await runVsCodeSmoke({
+      vscodeExecutablePath,
+      driverDirectory,
+      workspaceUri: pathToFileURL(workspacePath).toString(),
+      profileArgs,
+      env: {
+        WORKSPAI_SMOKE_EXTENSION_ID: extensionId,
+        WORKSPAI_SMOKE_USER_DATA: userDataDirectory,
+        WORKSPAI_SMOKE_WORKSPACE: workspacePath,
+        WORKSPAI_STATE_DIR: path.join(tempRoot, 'workspai-state'),
+      },
+    });
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true, maxRetries: 3 });
+  }
 
   console.log(
     `VSIX Electron smoke passed: ${JSON.stringify({

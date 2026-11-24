@@ -26,6 +26,7 @@ import {
   hasWorkspaceRootMarkers,
   resolveNewWorkspacePath,
 } from '../core/workspacePaths';
+import { CORE_PYTHON_REQUIREMENT } from '../contracts/rapidkitCoreRuntime';
 import { profileInstallsPythonEngineAtCreate } from '../contracts/createPlannerCapabilities';
 
 type InstallMethod = 'poetry' | 'venv' | 'pipx' | 'auto';
@@ -183,7 +184,7 @@ export async function createWorkspaceCommand(workspaceName?: string | Record<str
         },
         async (progress) => {
           progress.report({ increment: 0, message: 'Checking system requirements...' });
-          logger.info('Checking for Python 3.10+ installation...');
+          logger.info(`Checking for ${CORE_PYTHON_REQUIREMENT}...`);
 
           const { requirementCache } = await import('../utils/requirementCache.js');
           const cacheStats = requirementCache.getStats();
@@ -380,9 +381,9 @@ export async function createWorkspaceCommand(workspaceName?: string | Record<str
 
     if (requiresPython && !pythonReady) {
       const issueDetails = !pythonCheck?.available
-        ? 'Python 3.10+ was not detected on this system.'
+        ? `${CORE_PYTHON_REQUIREMENT} was not detected on this system.`
         : !pythonCheck?.meetsMinimumVersion
-          ? `Python ${pythonCheck?.version ?? 'unknown'} detected, but 3.10+ is required.`
+          ? `Python ${pythonCheck?.version ?? 'unknown'} detected, but RapidKit Core requires ${CORE_PYTHON_REQUIREMENT}.`
           : pythonCheck?.error || 'Python venv support is missing.';
 
       // Chat/Create flows must fail before any workspace mutation and return
@@ -392,9 +393,9 @@ export async function createWorkspaceCommand(workspaceName?: string | Record<str
       if (config.silent) {
         const prerequisite = new Error(
           !pythonCheck?.available
-            ? 'Python 3.10+ is required for this workspace profile. Install Python, restart VS Code, and create a fresh plan.'
+            ? `${CORE_PYTHON_REQUIREMENT} is required to install RapidKit Core for this profile. Install a compatible interpreter, restart VS Code, and create a fresh plan.`
             : !pythonCheck?.meetsMinimumVersion
-              ? `Python ${pythonCheck?.version ?? 'unknown'} is installed, but this workspace profile requires Python 3.10 or newer.`
+              ? `Python ${pythonCheck?.version ?? 'unknown'} is installed, but RapidKit Core requires ${CORE_PYTHON_REQUIREMENT}.`
               : `${issueDetails} Install the Python venv package for this interpreter, then create a fresh plan.`
         ) as Error & { code?: string };
         prerequisite.code = !pythonCheck?.available

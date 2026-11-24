@@ -1,7 +1,9 @@
 import * as fs from 'fs-extra';
 import * as path from 'path';
+import { createHash } from 'node:crypto';
 import { run } from './exec';
-import { getWorkspaceVenvRapidkitCandidates } from './platformCapabilities';
+import { buildNpxRapidkitPrefix, getWorkspaceVenvRapidkitCandidates } from './platformCapabilities';
+import { resolveBundledCliRuntime } from '../core/bundledCliRuntime';
 
 export type CoreRuntimeLocation = 'workspace' | 'global' | 'npx';
 
@@ -138,6 +140,27 @@ export async function resolveCoreRuntime(startPath?: string): Promise<CoreRuntim
 }
 
 export function coreRuntimeCacheKey(runtime: CoreRuntimeResolution): string {
+  if (runtime.location === 'npx') {
+    try {
+      const bundled = resolveBundledCliRuntime();
+      const bridge = bundled
+        ? [bundled.channel, bundled.version]
+        : ['npm', buildNpxRapidkitPrefix()[2]];
+      const identity = createHash('sha256')
+        .update(
+          JSON.stringify([
+            ...bridge,
+            process.env.RAPIDKIT_CORE_PYTHON_PACKAGE,
+            process.env.RAPIDKIT_BRIDGE_PYTHON,
+          ])
+        )
+        .digest('hex')
+        .slice(0, 16);
+      return `npx:${identity}`;
+    } catch {
+      return 'npx:unavailable';
+    }
+  }
   const version = runtime.version || 'unknown';
   return `${runtime.location}:${version}`;
 }

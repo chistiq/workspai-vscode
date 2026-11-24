@@ -10,6 +10,7 @@ import * as path from 'path';
 import { Logger } from '../utils/logger';
 import { SystemCheckResult } from '../types';
 import { getPoetryVersion } from '../utils/poetryHelper';
+import { CORE_PYTHON_REQUIREMENT } from '../contracts/rapidkitCoreRuntime';
 import { checkPythonEnvironment } from '../utils/pythonChecker';
 import { run } from '../utils/exec';
 import { WorkspaiCLI } from '../core/rapidkitCLI';
@@ -243,7 +244,7 @@ async function runSystemChecks(
     result.checks.push({
       name: 'Python',
       status: 'fail',
-      message: pythonEnv.recommendation || 'Python 3.10+ not found',
+      message: pythonEnv.recommendation || `${CORE_PYTHON_REQUIREMENT} not found`,
     });
   }
 

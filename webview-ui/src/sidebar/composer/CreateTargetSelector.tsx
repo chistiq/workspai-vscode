@@ -7,13 +7,13 @@ const TARGETS = [
   {
     id: 'workspace' as const,
     label: 'Workspace',
-    description: 'Create a governed workspace and its first project',
+    description: 'Create a governed workspace for the requested projects',
     icon: Boxes,
   },
   {
     id: 'project' as const,
     label: 'Project',
-    description: 'Create one project in the active selected workspace',
+    description: 'Add projects to the active selected workspace',
     icon: FolderPlus,
   },
 ] as const;

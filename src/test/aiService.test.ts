@@ -1272,7 +1272,7 @@ describe('aiService', () => {
               framework: 'fastapi',
               kit: 'fastapi.standard',
               projectName: 'billing-api',
-              suggestedModules: ['free/essentials/settings', 'pro/billing/invoices'],
+              suggestedModules: ['free/essentials/settings'],
               description: 'Billing APIs for subscription management.',
             })
           );
@@ -1503,6 +1503,32 @@ describe('aiService', () => {
     });
   });
 
+  it('preserves a runtime variant in the original request when routing and the model drop it', async () => {
+    const { plan } = await parseCreationIntent(
+      'Create an OpenRouter model gateway.',
+      'project',
+      undefined,
+      tempProjectPath,
+      undefined,
+      undefined,
+      undefined,
+      {
+        originalRequest: 'Create an OpenRouter model gateway in Python.',
+        preparedDraft: {
+          modelId: 'test',
+          draft: {
+            framework: 'openrouter',
+            kit: 'gateway.openrouter.typescript',
+            projectName: 'gateway',
+            suggestedModules: [],
+          },
+        },
+      }
+    );
+    expect(plan).toMatchObject({ kit: 'gateway.openrouter.python', suggestedModules: [] });
+    expect(mockGetModulesCatalog).not.toHaveBeenCalled();
+  });
+
   it('rejects framework and kit drift again at the execution boundary', () => {
     expect(() =>
       validateCreationPlanForExecution({
@@ -1528,14 +1554,14 @@ describe('aiService', () => {
         kit: 'nestjs.standard',
         projectName: 'api-service',
         suggestedModules: ['free/essentials/settings'],
-        description: 'Invalid duplicate companion lane.',
+        description: 'Invalid duplicate destination.',
         secondaryProject: {
           framework: 'nestjs',
           kit: 'nestjs.standard',
-          projectName: 'second-api',
+          projectName: 'api-service',
         },
       })
-    ).toThrow(/must use different framework lanes/);
+    ).toThrow(/Project names must be distinct/);
   });
 
   it('injects workspace-installed module signals into AI creation prompt', async () => {
@@ -1620,7 +1646,7 @@ describe('aiService', () => {
     expect(systemPrompt).toContain('billing-api');
   });
 
-  it('sanitizes invalid AI creation fields and keeps only allowed module slugs', async () => {
+  it('sanitizes invalid AI creation fields and expands exact module slugs from the full pinned catalog', async () => {
     const model = {
       id: 'gpt-4o',
       name: 'GPT-4o',
@@ -1634,12 +1660,7 @@ describe('aiService', () => {
               framework: 'django',
               kit: 'nestjs.standard',
               projectName: '*** API ###',
-              suggestedModules: [
-                'free/essentials/settings',
-                'unknown/foo/bar',
-                'pro/billing/invoices',
-                'not-a-slug',
-              ],
+              suggestedModules: ['free/business/feature_flags'],
               description: '   Build a robust billing API   ',
             })
           );
@@ -1690,7 +1711,9 @@ describe('aiService', () => {
     expect(plan.installMethod).toBe('auto');
     expect(plan.workspaceName).toBe('weird-workspace-wsp');
     expect(plan.projectName).toBe('api');
-    expect(plan.suggestedModules).toEqual(['free/essentials/settings', 'pro/billing/invoices']);
+    expect(plan.suggestedModules.at(-1)).toBe('free/business/feature_flags');
+    expect(plan.suggestedModules).toContain('free/cache/redis');
+    expect(plan.suggestedModules).toContain('free/essentials/settings');
     expect(plan.description).toBe('Build a robust billing API');
   });
 
@@ -1742,7 +1765,7 @@ describe('aiService', () => {
               framework: 'springboot',
               kit: 'springboot.standard',
               projectName: 'orders-service',
-              suggestedModules: ['free/essentials/settings', 'free/cache/redis'],
+              suggestedModules: [],
               description: 'Spring Boot orders service.',
             })
           );
@@ -1782,7 +1805,7 @@ describe('aiService', () => {
     expect(plan.suggestedModules).toEqual([]);
   });
 
-  it('auto-corrects near-miss module slug typos in AI creation output', async () => {
+  it('rejects misspelled module slugs without choosing a different module', async () => {
     const model = {
       id: 'gpt-4o',
       name: 'GPT-4o',
@@ -1834,15 +1857,14 @@ describe('aiService', () => {
     });
     mockSelectChatModels.mockResolvedValue([model]);
 
-    const { plan } = await parseCreationIntent(
-      'Create a catalog api with throttling',
-      'workspace',
-      'fastapi',
-      tempProjectPath
-    );
-
-    expect(plan.suggestedModules).toContain('free/security/rate_limiting');
-    expect(plan.suggestedModules).toContain('free/essentials/settings');
+    await expect(
+      parseCreationIntent(
+        'Create a catalog api with throttling',
+        'workspace',
+        'fastapi',
+        tempProjectPath
+      )
+    ).rejects.toThrow('free/security/rate-limitng is not in the RapidKit Core');
   });
 
   it('uses response.text when stream is empty and marks heuristic fallback on invalid JSON', async () => {

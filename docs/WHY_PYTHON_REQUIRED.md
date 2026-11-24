@@ -9,8 +9,9 @@ You do **not** need Python to use:
 - adopted repositories;
 - Node.js, Go, Java, .NET, Rust, PHP, frontend, desktop, or extension kits.
 
-Python 3.10+ and RapidKit Core are needed only when a selected kit or module is
-implemented by the optional Python engine.
+RapidKit Core 0.6.3 requires Python `>=3.11,<4.0` when the selected kit or module
+uses the Core engine. A generated NestJS application runs on Node.js. Its Core
+scaffolding and module bridge can use a separate Python interpreter.
 
 ## Why the extension does not install Python itself
 
@@ -49,7 +50,7 @@ Python as an optional runtime, but it must not:
 
 When a user explicitly selects a Python-backed capability, Workspai may ask for:
 
-- Python 3.10 or newer;
+- Python 3.11 through 3.x;
 - an environment strategy such as Poetry or venv;
 - permission to install or upgrade RapidKit Core inside that environment.
 

@@ -78,6 +78,22 @@ describe('modules catalog core runtime cache', () => {
     ).toBe(false);
   });
 
+  it('discards bridge caches written before the CLI identity was captured', () => {
+    const runtime: CoreRuntimeResolution = { executable: null, location: 'npx' };
+    expect(coreRuntimeCacheKey(runtime)).not.toBe('npx:unknown');
+    expect(
+      isModulesCatalogCacheValid(
+        {
+          schema_version: 1,
+          modules: [],
+          rapidkit_core_location: 'npx',
+          rapidkit_core_cache_key: 'npx:unknown',
+        },
+        runtime
+      )
+    ).toBe(false);
+  });
+
   it('resolves nested projects through the current Workspai workspace marker', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'workspai-catalog-root-'));
     const nestedProject = path.join(root, 'services', 'api');

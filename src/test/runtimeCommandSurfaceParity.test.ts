@@ -2,6 +2,8 @@ import fs from 'fs';
 import path from 'path';
 
 import { describe, expect, it } from 'vitest';
+import { inspectCreateModuleCatalog } from '../core/projectCreationModules.js';
+import { listExecutableScaffoldKitCapabilities } from '../core/scaffoldKits.js';
 
 type RuntimeSurfaceContract = {
   schemaVersion: string;
@@ -176,7 +178,6 @@ describe('shared runtime command surface contract (extension)', () => {
     const createProjectModal = read('webview-ui/src/components/CreateProjectModal.tsx');
     const aiCreateModal = read('webview-ui/src/components/AICreateModal.tsx');
     const welcomePanelAiModal = read('src/ui/panels/welcomePanelAiModalMessages.ts');
-    const aiService = read('src/core/aiService.ts');
     const moduleSupport = read('webview-ui/src/lib/moduleSupport.ts');
 
     expect(contract.moduleSuggestionFrameworks).toEqual(['fastapi', 'nestjs']);
@@ -185,26 +186,10 @@ describe('shared runtime command surface contract (extension)', () => {
       'AI module suggestions are available only for FastAPI and NestJS projects.'
     );
 
-    for (const framework of contract.moduleUnsupportedFrameworks) {
-      if (
-        [
-          'nextjs',
-          'remix',
-          'vite-react',
-          'vite-vue',
-          'vite-svelte',
-          'vite-solid',
-          'vite-vanilla',
-          'nuxt',
-          'angular',
-          'astro',
-          'sveltekit',
-        ].includes(framework)
-      ) {
-        expect(moduleSupport, framework).toContain(`'${framework}'`);
-        continue;
-      }
-      expect(aiService, framework).toContain(`framework === '${framework}'`);
+    for (const { id, framework } of listExecutableScaffoldKitCapabilities()) {
+      expect(inspectCreateModuleCatalog({ kit: id }).supported, id).toBe(
+        contract.moduleSuggestionFrameworks.includes(framework)
+      );
     }
 
     expect(moduleSupport).toContain('MODULE_UNSUPPORTED_FRONTEND_PROJECT_TYPES');

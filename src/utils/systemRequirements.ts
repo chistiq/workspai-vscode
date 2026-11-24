@@ -1,11 +1,12 @@
 /**
  * System Requirements Checker & Auto-Installer
- * Validates Python 3.10+, venv, Node.js, and Git with auto-fix capabilities
+ * Validates Core Python, venv, Node.js, and Git
  */
 
 import * as vscode from 'vscode';
 import { run } from './exec';
 import { Logger } from './logger';
+import { CORE_PYTHON_REQUIREMENT } from '../contracts/rapidkitCoreRuntime';
 import { checkPythonEnvironment, getPythonErrorMessage } from './pythonChecker';
 import { appendCommandsToTerminal, runCommandsInTerminal } from './terminalExecutor';
 
@@ -13,7 +14,7 @@ export interface SystemRequirementsResult {
   allMet: boolean;
   python: {
     available: boolean;
-    meetsMinimumVersion: boolean; // Python 3.10+
+    meetsMinimumVersion: boolean;
     venvSupport: boolean;
     version?: string;
     canAutoFix: boolean;
@@ -342,7 +343,7 @@ export async function showSystemRequirementsError(
     // Python not found - can't auto-fix
     const message =
       '❌ Python not found on your system.\n\n' +
-      'Workspai project creation requires Python 3.10+ through RapidKit Core.\n\n' +
+      `Core-backed project creation requires ${CORE_PYTHON_REQUIREMENT}.\n\n` +
       'Please install Python from:\n' +
       '  • Ubuntu/Debian: sudo apt install python3.13\n' +
       '  • macOS: brew install python@3.13\n' +
@@ -369,7 +370,7 @@ export async function showSystemRequirementsError(
     // Python version too old
     const message =
       `❌ Python ${requirements.python.version} is too old.\n\n` +
-      'Workspai requires Python 3.10 or higher for RapidKit Core compatibility.\n\n' +
+      `RapidKit Core requires ${CORE_PYTHON_REQUIREMENT}.\n\n` +
       'Please upgrade Python:\n' +
       '  • Ubuntu/Debian: sudo apt install python3.13\n' +
       '  • macOS: brew install python@3.13\n' +

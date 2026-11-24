@@ -37,8 +37,10 @@ function host(
       workspaceName: input.name,
       reused: false,
     })),
-    createProject: vi.fn(async () => undefined),
-    projectPath: (workspacePath, projectName) => `${workspacePath}/${projectName}`,
+    createProject: vi.fn(async ({ workspacePath, projectName, modules }) => ({
+      path: `${workspacePath}/${projectName}`,
+      installedModules: modules ?? [],
+    })),
     syncIntelligence: vi.fn(async () => undefined),
     refreshProjects: vi.fn(async () => undefined),
     onProgress: vi.fn(),
@@ -60,8 +62,9 @@ describe('approved Create execution capability', () => {
           reused: false,
         };
       },
-      createProject: async ({ projectName }) => {
+      createProject: async ({ workspacePath, projectName }) => {
         events.push(`project:${projectName}`);
+        return { path: `${workspacePath}/${projectName}`, installedModules: [] };
       },
       syncIntelligence: async () => {
         events.push('intelligence');
@@ -82,6 +85,44 @@ describe('approved Create execution capability', () => {
       'intelligence',
       'refresh',
     ]);
+  });
+
+  it('creates every approved sibling in the selected workspace with its own module selection', async () => {
+    const runtime = host();
+    const result = await executeApprovedCreatePlan({
+      plan: {
+        ...basePlan,
+        type: 'project',
+        secondaryProject: { framework: 'nextjs', kit: 'frontend.nextjs', projectName: 'ops-ui' },
+        additionalProjects: [
+          {
+            framework: 'nestjs',
+            kit: 'nestjs.standard',
+            projectName: 'shop-api',
+            suggestedModules: ['free/security/cors'],
+          },
+        ],
+      },
+      selectedWorkspacePath: '$SELECTED',
+      host: runtime,
+    });
+    expect(runtime.createWorkspace).not.toHaveBeenCalled();
+    expect(runtime.createProject).toHaveBeenCalledTimes(3);
+    expect(runtime.createProject).toHaveBeenLastCalledWith({
+      workspacePath: '$SELECTED',
+      projectName: 'shop-api',
+      framework: 'nestjs',
+      kit: 'nestjs.standard',
+      modules: ['free/security/cors'],
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      projects: [
+        { path: '$SELECTED/shop-app' },
+        { path: '$SELECTED/ops-ui' },
+        { path: '$SELECTED/shop-api', installedModules: ['free/security/cors'] },
+      ],
+    });
   });
 
   it('keeps host installation policy controller-owned', async () => {

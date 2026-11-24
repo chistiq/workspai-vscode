@@ -134,9 +134,10 @@ describe('service timeout config', () => {
   it('returns stale-cache fallback status and CLI failure details', async () => {
     mockPathExists.mockResolvedValue(true);
     mockReadJson.mockResolvedValue({
+      cliVersion: verifiedWorkspaiPackage.split('@').at(-1),
       kits: [
         {
-          name: 'fastapi.cached',
+          name: 'fastapi.standard',
           display_name: 'Cached FastAPI Kit',
           category: 'fastapi',
           version: '1.0.0',
@@ -154,7 +155,9 @@ describe('service timeout config', () => {
       source: 'stale-cache',
       error: 'CLI executable unavailable',
     });
-    expect(result.kits).toContainEqual(expect.objectContaining({ name: 'fastapi.cached' }));
+    expect(result.kits).toContainEqual(
+      expect.objectContaining({ name: 'fastapi.standard', display_name: 'Cached FastAPI Kit' })
+    );
     expect(mockRun).toHaveBeenCalledOnce();
   });
 
@@ -171,9 +174,43 @@ describe('service timeout config', () => {
     expect(result.kits.length).toBeGreaterThan(0);
   });
 
+  it('ignores cache from the previous CLI and applies the Create contract to every listed kit', async () => {
+    mockPathExists.mockResolvedValue(true);
+    mockReadJson.mockResolvedValue({ cliVersion: '0.82.0', kits: [], timestamp: Date.now() });
+    mockRun.mockResolvedValue({
+      exitCode: 0,
+      stdout: JSON.stringify({
+        schema_version: 1,
+        ok: true,
+        kits: [
+          {
+            name: 'fastapi.standard',
+            display_name: 'FastAPI from Core',
+            category: 'backend',
+            version: '1.0.0',
+          },
+          { name: 'fastapi.unregistered' },
+        ],
+      }),
+    });
+
+    const result = await KitsService.initialize(context).getKitsWithStatus();
+    const planner = await import('../contracts/create-planner-capabilities.v1.json');
+    const expected = [
+      ...planner.default.nativeCreate,
+      ...planner.default.officialCreate.filter((entry) => entry.canExecuteCreate),
+    ].map((entry) => ({ name: entry.id, category: entry.plannerFramework }));
+    expect(result.source).toBe('live');
+    expect(result.kits.map(({ name, category }) => ({ name, category }))).toEqual(expected);
+    expect(result.kits).toContainEqual(
+      expect.objectContaining({ name: 'fastapi.standard', display_name: 'FastAPI from Core' })
+    );
+  });
+
   it('bypasses a fresh kits cache when a forced retry is requested', async () => {
     mockPathExists.mockResolvedValue(true);
     mockReadJson.mockResolvedValue({
+      cliVersion: verifiedWorkspaiPackage.split('@').at(-1),
       kits: [],
       timestamp: Date.now(),
     });

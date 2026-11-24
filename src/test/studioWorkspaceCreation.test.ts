@@ -1,7 +1,7 @@
 import fs from 'fs-extra';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   studioWorkspaceCreationTool,
   studioProjectCreationTool,
@@ -32,12 +32,16 @@ async function fixture(failProject?: string) {
       expect(await fs.pathExists(cwd)).toBe(true);
       calls.push({ args, cwd });
       if (args[1] === 'workspace') {
-        await fs.outputJSON(
-          path.join(args[args.indexOf('--output') + 1], args[2], '.workspai/workspace.json'),
-          {
-            workspace_name: args[2],
-          }
-        );
+        const root = path.join(args[args.indexOf('--output') + 1], args[2]);
+        await fs.outputJSON(path.join(root, '.workspai/workspace.contract.json'), { projects: [] });
+        await fs.outputJSON(path.join(root, '.workspai/workspace.json'), {
+          workspace_name: args[2],
+        });
+      } else if (args[0] === 'add') {
+        const registryPath = path.join(cwd, 'registry.json');
+        const registry = await fs.readJSON(registryPath);
+        registry.installed_modules.push({ slug: args[2] });
+        await fs.writeJSON(registryPath, registry);
       } else if (args[3] === failProject) return { exitCode: 1, stderr: 'Generator unavailable' };
       else {
         await fs.outputJSON(path.join(cwd, args[3], '.workspai/workspace-link.local.json'), {
@@ -45,6 +49,11 @@ async function fixture(failProject?: string) {
           project: { relativePath: args[3] },
         });
         await fs.outputFile(path.join(cwd, args[3], 'source.txt'), 'Generated source\n');
+        await fs.outputJSON(path.join(cwd, args[3], 'registry.json'), { installed_modules: [] });
+        const contract = path.join(cwd, '.workspai/workspace.contract.json');
+        const registry = await fs.readJSON(contract);
+        registry.projects.push({ name: args[3], path: args[3] });
+        await fs.writeJSON(contract, registry);
       }
       return { exitCode: 0 };
     },
@@ -78,6 +87,96 @@ async function approved(f: Awaited<ReturnType<typeof fixture>>) {
   };
 }
 describe('Owned workspace creation', () => {
+  it('approves and installs dependency-expanded modules in the new project only', async () => {
+    const f = await fixture();
+    const request = {
+      ...f.request,
+      projects: [{ name: 'api', kit: 'nestjs.standard', modules: ['free/security/rate_limiting'] }],
+    };
+    const approval = await f.tool.authorize!(request, f.context);
+    expect(approval.approval?.displayCommand).toContain('free/essentials/settings');
+    const context = {
+      ...f.context,
+      approval: {
+        fingerprint: approval.approval!.fingerprint,
+        approvedAt: new Date().toISOString(),
+        approvedBy: 'user' as const,
+      },
+    };
+    await expect(
+      f.tool.execute(
+        {
+          ...request,
+          projects: [{ ...request.projects[0], modules: ['free/security/cors'] }],
+        },
+        context
+      )
+    ).rejects.toThrow('exact destination');
+    expect(f.calls).toEqual([]);
+    const result = await f.tool.execute(request, context);
+    expect(result).toMatchObject({
+      ok: true,
+      output: {
+        projects: [
+          {
+            name: 'api',
+            installedModules: ['free/essentials/settings', 'free/security/rate_limiting'],
+          },
+        ],
+      },
+    });
+    expect(f.calls.slice(-2)).toEqual(
+      ['free/essentials/settings', 'free/security/rate_limiting'].map((slug) => ({
+        cwd: path.join(f.home, 'shop', 'api'),
+        args: ['add', 'module', slug, '--non-interactive', '--no-deps'],
+      }))
+    );
+  });
+
+  it('installs catalog modules in an approved sibling, leaving the previously selected project alone', async () => {
+    const f = await fixture();
+    const workspace = await fs.realpath(f.original);
+    const selected = path.join(workspace, 'existing-api');
+    const target = path.join(workspace, 'new-api');
+    const contract = path.join(workspace, '.workspai/workspace.contract.json');
+    await fs.ensureDir(selected);
+    const registered = { projects: [{ name: 'existing-api', path: 'existing-api' }] };
+    await fs.outputJSON(contract, registered);
+    const run = vi.fn(async ({ args, cwd }: { args: string[]; cwd: string }) => {
+      if (args[0] === 'create') {
+        expect(cwd).toBe(workspace);
+        await fs.outputFile(path.join(target, 'src', 'index.ts'), 'export {};');
+        registered.projects.push({ name: 'new-api', path: 'new-api' });
+        await fs.writeJSON(contract, registered);
+      } else {
+        expect(cwd).toBe(target);
+        await fs.writeJSON(path.join(target, 'registry.json'), {
+          installed_modules: [{ slug: args[2] }],
+        });
+      }
+      return { exitCode: 0 };
+    });
+    const tool = studioProjectCreationTool({ run });
+    const request = { name: 'new-api', kit: 'nestjs.standard', modules: ['free/security/cors'] };
+    const context = { ...f.context, workspacePath: workspace, projectPath: selected };
+    const authorization = await tool.authorize!(request, context);
+    expect(run).not.toHaveBeenCalled();
+    expect(authorization.approval?.summary).toContain('free/security/cors');
+    const result = await tool.execute(request, {
+      ...context,
+      approval: {
+        fingerprint: authorization.approval!.fingerprint,
+        approvedBy: 'user',
+        approvedAt: new Date().toISOString(),
+      },
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      output: { projectPath: target, installedModules: ['free/security/cors'] },
+    });
+    expect(await fs.readdir(selected)).toEqual([]);
+  });
+
   it('creates a sibling in the verified workspace and selects the new project for checks', async () => {
     const f = await fixture();
     const workspace = await fs.realpath(f.original);
@@ -619,11 +718,14 @@ describe('Owned workspace creation', () => {
     const broken = studioWorkspaceCreationTool({
       managedHome: f.home,
       run: async ({ args }) => {
-        if (args[1] === 'workspace')
+        if (args[1] === 'workspace') {
+          await fs.outputJSON(path.join(f.home, 'different/.workspai/workspace.contract.json'), {
+            projects: [],
+          });
           await fs.outputJSON(path.join(f.home, 'different/.workspai/workspace.json'), {
             workspace_name: 'different',
           });
-        else
+        } else
           await fs.outputJSON(
             path.join(f.home, 'different/api/.workspai/workspace-link.local.json'),
             { workspace: { root: f.original }, project: { relativePath: 'api' } }
@@ -638,7 +740,7 @@ describe('Owned workspace creation', () => {
         ...f.context,
         approval: { ...context.approval, fingerprint: auth.approval!.fingerprint },
       })
-    ).toMatchObject({ ok: false, error: expect.stringContaining('not registered') });
+    ).toMatchObject({ ok: false, error: expect.stringContaining('verified membership') });
   });
   it('accepts another creation route and routes later inspection and Resume to its selected target', async () => {
     const f = await fixture();

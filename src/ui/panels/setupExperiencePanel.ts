@@ -11,6 +11,11 @@ import * as path from 'path';
 import { runCommandsInTerminal } from '../../utils/terminalExecutor';
 import { run } from '../../utils/exec';
 import {
+  CORE_PYTHON_REQUIREMENT,
+  parsePythonVersion,
+  supportsCorePython,
+} from '../../contracts/rapidkitCoreRuntime';
+import {
   buildPackageRunnerInvocationEnv,
   buildNpmCliVersionVerifyCommands,
   buildNpxRapidkitVersionProbeArgs,
@@ -613,9 +618,13 @@ export class SetupPanel {
       case 'installCoreSmart': {
         const installStatus = await this._checkInstallationStatus();
 
-        if (!installStatus.pythonInstalled || !installStatus.pipInstalled) {
+        if (
+          !installStatus.pythonInstalled ||
+          installStatus.pythonNeedsUpgrade ||
+          !installStatus.pipInstalled
+        ) {
           vscode.window.showWarningMessage(
-            'Python and pip are required before installing RapidKit Core. Please install Python 3.10+ first.'
+            `Installing RapidKit Core requires ${CORE_PYTHON_REQUIREMENT} and pip.`
           );
           break;
         }
@@ -1404,10 +1413,10 @@ export class SetupPanel {
             preferences.manualPaths.python || '',
             'python3',
             'python',
-            'python3.10',
             'python3.11',
             'python3.12',
             'python3.13',
+            'python3.14',
           ]),
       ...discoverPythonExecutableCandidates(process.platform, process.env, os.homedir()),
     ].filter((value, index, values) => Boolean(value.trim()) && values.indexOf(value) === index);
@@ -1418,20 +1427,21 @@ export class SetupPanel {
           shell: status.isWindows,
           timeout: 2000,
         });
-        status.pythonInstalled = true;
-        const versionString = result.stdout.trim().replace('Python ', '');
-        status.pythonVersion = versionString;
-        status.detections.python = this._buildDetection(cmd, preferences.manualPaths.python);
-
-        const versionMatch = versionString.match(/^(\d+)\.(\d+)/);
-        if (versionMatch) {
-          const major = parseInt(versionMatch[1]);
-          const minor = parseInt(versionMatch[2]);
-          if (major < 3 || (major === 3 && minor < 10)) {
-            status.pythonNeedsUpgrade = true;
-          }
+        const output = result.stdout.trim() || result.stderr.trim();
+        const version = parsePythonVersion(output);
+        if (!version) {
+          continue;
         }
-        break;
+        const compatible = supportsCorePython(version);
+        if (!status.pythonInstalled || compatible) {
+          status.pythonInstalled = true;
+          status.pythonVersion = output.replace('Python ', '');
+          status.detections.python = this._buildDetection(cmd, preferences.manualPaths.python);
+          status.pythonNeedsUpgrade = !compatible;
+        }
+        if (compatible || cmd === preferences.manualPaths.python) {
+          break;
+        }
       } catch {
         continue;
       }

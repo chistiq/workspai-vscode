@@ -1,3 +1,4 @@
+import { CORE_PYTHON_REQUIREMENT } from '@workspai-contracts/rapidkitCoreRuntime';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   AlertTriangle,
@@ -1054,8 +1055,8 @@ export function SetupExperience({ embedded = false }: { embedded?: boolean }) {
         monogram: 'PY',
         iconSrc: window.PYTHON_ICON_URI,
         color: wsBrand.python,
-        title: 'Python 3.10+',
-        subtitle: 'Optional runtime for Python-backed kits and modules',
+        title: 'Python',
+        subtitle: `${CORE_PYTHON_REQUIREMENT} for optional RapidKit Core operations`,
         required: false,
         installed: pythonOk,
         version: s?.pythonVersion,
@@ -1063,7 +1064,7 @@ export function SetupExperience({ embedded = false }: { embedded?: boolean }) {
         warning: Boolean(s?.pythonInstalled && s?.pythonNeedsUpgrade),
         hint:
           s?.pythonInstalled && s?.pythonNeedsUpgrade
-            ? 'Installed but upgrade to 3.10+ recommended'
+            ? `Installed. RapidKit Core requires ${CORE_PYTHON_REQUIREMENT}.`
             : preferences.manualPaths.python
               ? `Manual path: ${preferences.manualPaths.python}`
               : 'Download from python.org',
@@ -1321,7 +1322,7 @@ export function SetupExperience({ embedded = false }: { embedded?: boolean }) {
     }
     if (s?.pythonInstalled && s?.pythonNeedsUpgrade) {
       suggestions.push(
-        `Python ${s.pythonVersion} detected. Upgrade to 3.10+ to avoid template/runtime drift.`
+        `Python ${s.pythonVersion} detected. RapidKit Core requires ${CORE_PYTHON_REQUIREMENT}.`
       );
     }
     if (!s?.goInstalled && preferences.manualPaths.go) {

@@ -1,3 +1,6 @@
+import { creationPlanProjects } from './createExecutionCapability.js';
+import { resolveCreateModules } from './projectCreationModules.js';
+import { isModuleCapableKit } from './aiCoreModuleCatalog.js';
 import { AIModelRequestTimeoutError, getAIToolRequestTimeoutMs } from './aiRequestTimeout.js';
 import { isAIProviderQuotaExhausted } from '../contracts/aiProviderQuota.js';
 import type { AIImageContent } from './aiImageContent.js';
@@ -43,12 +46,8 @@ import {
   defaultScaffoldKitForFramework,
   defaultWorkspaceProfileForKit,
   defaultWorkspaceProfileForFramework,
-  isAgentScaffoldFramework,
   isScaffoldFramework,
   isBackendScaffoldFramework,
-  isDesktopScaffoldFramework,
-  isExtensionScaffoldFramework,
-  isFrontendScaffoldFramework,
   listExecutableScaffoldKitCapabilities,
   scaffoldKitsForFramework,
   scaffoldRuntimeForFramework,
@@ -62,6 +61,8 @@ import {
 import { buildHeuristicCreationDraft } from './aiCreationHeuristic';
 import {
   inferExplicitCreationFrameworks,
+  explicitCreationKit,
+  namedCreationFrameworks,
   inferPolyglotCompanionProject,
   inferStackIntentFromPrompt,
   inferWorkspaceProfileFromCreationPrompt,
@@ -1397,6 +1398,9 @@ async function getWorkspaceAwareLiveModules(
 ): Promise<LiveModuleEntry[] | null> {
   try {
     const result = await ModulesCatalogService.getInstance().getModulesCatalog(workspacePath);
+    if (result.source === 'fallback') {
+      return null;
+    }
     return result.modules.map((module) => ({
       name: module.id,
       display_name: module.name,
@@ -1407,7 +1411,10 @@ async function getWorkspaceAwareLiveModules(
       tags: Array.isArray(module.tags) ? module.tags : [],
     }));
   } catch {
-    // The catalog service may not be initialized yet; fall back to direct CLI probing.
+    // A global probe cannot establish the catalog for a selected workspace.
+    if (workspacePath) {
+      return null;
+    }
   }
 
   return await fetchLiveModules();
@@ -1753,6 +1760,13 @@ export type AICreateProfile =
   | 'enterprise';
 export type AICreateFramework = ScaffoldFramework;
 
+export type AICreationProject = {
+  framework: AICreateFramework;
+  kit: string;
+  projectName: string;
+  suggestedModules?: string[];
+};
+
 export interface AICreationPlan {
   type: 'workspace' | 'project';
   workspaceName: string;
@@ -1763,11 +1777,8 @@ export interface AICreationPlan {
   projectName: string;
   suggestedModules: string[];
   description: string;
-  secondaryProject?: {
-    framework: AICreateFramework;
-    kit: string;
-    projectName: string;
-  };
+  secondaryProject?: AICreationProject;
+  additionalProjects?: AICreationProject[];
 }
 
 export class UnsupportedCreationStackError extends Error {
@@ -1793,36 +1804,6 @@ const VALID_PROFILES = new Set<AICreateProfile>([
   'dotnet-only',
   'polyglot',
   'enterprise',
-]);
-
-const STATIC_MODULE_SLUGS = new Set<string>([
-  'free/essentials/settings',
-  'free/essentials/logging',
-  'free/essentials/middleware',
-  'free/essentials/deployment',
-  'free/auth/core',
-  'free/auth/oauth',
-  'free/auth/session',
-  'free/auth/passwordless',
-  'free/auth/api_keys',
-  'free/database/db_postgres',
-  'free/database/db_mongo',
-  'free/database/db_sqlite',
-  'free/cache/redis',
-  'free/security/cors',
-  'free/security/security_headers',
-  'free/security/rate_limiting',
-  'free/observability/core',
-  'free/users/users_core',
-  'free/users/users_profiles',
-  'free/business/storage',
-  'free/billing/stripe_payment',
-  'free/billing/cart',
-  'free/billing/inventory',
-  'free/communication/notifications',
-  'free/communication/email',
-  'free/tasks/celery',
-  'free/ai/ai_assistant',
 ]);
 
 /**
@@ -1943,7 +1924,8 @@ function normalizeSecondaryProject(
   raw: unknown,
   prompt: string,
   primaryFramework: ScaffoldFramework,
-  stackIntent?: import('./creationStackIntent').CreationStackIntent
+  stackIntent?: import('./creationStackIntent').CreationStackIntent,
+  otherFrameworks: ScaffoldFramework[] = []
 ): AICreationPlan['secondaryProject'] | undefined {
   const heuristicFallback = () =>
     inferPolyglotCompanionProject(prompt, primaryFramework, stackIntent);
@@ -1951,21 +1933,26 @@ function normalizeSecondaryProject(
   const reconcileWithExplicitIntent = (
     candidate: AICreationPlan['secondaryProject'] | undefined
   ): AICreationPlan['secondaryProject'] | undefined => {
-    const explicitFrameworks = inferExplicitCreationFrameworks(prompt);
+    const explicitFrameworks = namedCreationFrameworks(prompt);
     const explicitCompanion = explicitFrameworks.find(
-      (framework) => framework !== primaryFramework
+      (framework) => framework !== primaryFramework && !otherFrameworks.includes(framework)
     );
     if (!explicitCompanion) {
       return candidate;
     }
 
     const fallback = heuristicFallback();
+    if (candidate?.framework === explicitCompanion) {
+      return candidate;
+    }
     const projectName = sanitizeKebab(
       candidate?.projectName || fallback?.projectName || 'companion-project'
     );
     return {
       framework: explicitCompanion,
-      kit: normalizeCreationKit(undefined, explicitCompanion),
+      kit:
+        explicitCreationKit(explicitCompanion, prompt) ??
+        normalizeCreationKit(undefined, explicitCompanion),
       projectName,
     };
   };
@@ -1976,16 +1963,19 @@ function normalizeSecondaryProject(
 
   const record = raw as Record<string, unknown>;
   const framework = normalizeCreationFramework(record.framework, undefined);
-  const kit = normalizeCreationKit(record.kit, framework);
+  const kit = explicitCreationKit(framework, prompt) ?? normalizeCreationKit(record.kit, framework);
   const projectName = sanitizeKebab(
     typeof record.projectName === 'string' ? record.projectName : 'companion-project'
   );
 
-  if (framework === primaryFramework) {
-    return reconcileWithExplicitIntent(heuristicFallback());
-  }
-
-  return reconcileWithExplicitIntent({ framework, kit, projectName });
+  return reconcileWithExplicitIntent({
+    framework,
+    kit,
+    projectName,
+    ...(record.suggestedModules !== undefined
+      ? { suggestedModules: record.suggestedModules as string[] }
+      : {}),
+  });
 }
 
 function reconcileDelegatedCreationRuntimes(input: {
@@ -2036,128 +2026,44 @@ function reconcileDelegatedCreationRuntimes(input: {
 }
 
 export function validateCreationPlanForExecution(plan: AICreationPlan): AICreationPlan {
-  if (!isCreateFramework(plan.framework)) {
-    throw new Error(`Unsupported project framework in creation plan: ${String(plan.framework)}`);
+  const projects = creationPlanProjects(plan);
+  if (projects.length > 8) {
+    throw new Error('Create supports up to eight projects in one plan.');
   }
-  if (!scaffoldKitsForFramework(plan.framework).includes(plan.kit)) {
-    throw new Error(
-      `Creation plan kit ${plan.kit} does not belong to framework ${plan.framework}.`
-    );
+  if (new Set(projects.map(({ projectName }) => projectName)).size !== projects.length) {
+    throw new Error('Project names must be distinct within the destination workspace.');
   }
-  if (plan.secondaryProject) {
-    const secondary = plan.secondaryProject;
-    if (!isCreateFramework(secondary.framework)) {
+  const validated = projects.map((project) => {
+    if (!isCreateFramework(project.framework)) {
       throw new Error(
-        `Unsupported companion framework in creation plan: ${String(secondary.framework)}`
+        `Unsupported project framework in creation plan: ${String(project.framework)}`
       );
     }
-    if (!scaffoldKitsForFramework(secondary.framework).includes(secondary.kit)) {
+    if (!scaffoldKitsForFramework(project.framework).includes(project.kit)) {
       throw new Error(
-        `Companion kit ${secondary.kit} does not belong to framework ${secondary.framework}.`
+        `Creation plan kit ${project.kit} does not belong to framework ${project.framework}.`
       );
     }
-    if (secondary.framework === plan.framework) {
-      throw new Error('Primary and companion projects must use different framework lanes.');
+    if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(project.projectName)) {
+      throw new Error(`Invalid project directory name: ${project.projectName}.`);
     }
-  }
-  return plan;
-}
-
-function normalizeSuggestedModules(
-  modules: unknown,
-  liveModules: LiveModuleEntry[] | null,
-  framework?: ScaffoldFramework
-): string[] {
-  // Go, Spring Boot, .NET, and frontend kits do not support the RapidKit module marketplace.
-  if (
-    framework === 'go' ||
-    framework === 'springboot' ||
-    framework === 'dotnet' ||
-    framework === 'rust' ||
-    framework === 'laravel' ||
-    isDesktopScaffoldFramework(framework) ||
-    isExtensionScaffoldFramework(framework) ||
-    isAgentScaffoldFramework(framework) ||
-    (framework && isFrontendScaffoldFramework(framework))
-  ) {
-    return [];
-  }
-
-  const allowedSet = liveModules?.length
-    ? new Set(liveModules.map((m) => m.slug))
-    : STATIC_MODULE_SLUGS;
-  const allowedList = [...allowedSet];
-
-  const normalized = Array.isArray(modules)
-    ? modules
-        .filter((m): m is string => typeof m === 'string')
-        .map((m) => m.trim().toLowerCase())
-        .filter((m) => /^(?:[a-z0-9-]+)\/[a-z0-9_-]+\/[a-z0-9_-]+$/.test(m))
-        .map((m) => {
-          if (allowedSet.has(m)) {
-            return m;
-          }
-          return findClosestModuleSlug(m, allowedList);
-        })
-        .filter((m): m is string => Boolean(m))
-    : [];
-
-  const unique = [...new Set(normalized)].slice(0, 6);
-  if (!unique.includes('free/essentials/settings')) {
-    unique.unshift('free/essentials/settings');
-  }
-  return unique.slice(0, 6);
-}
-
-function findClosestModuleSlug(input: string, allowed: string[]): string | null {
-  if (allowed.length === 0) {
-    return null;
-  }
-
-  let bestSlug: string | null = null;
-  let bestDistance = Number.POSITIVE_INFINITY;
-  for (const candidate of allowed) {
-    const distance = levenshteinDistance(input, candidate);
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      bestSlug = candidate;
-    }
-  }
-
-  // Keep correction conservative: only near-miss typos are auto-corrected.
-  return bestDistance <= 4 ? bestSlug : null;
-}
-
-function levenshteinDistance(a: string, b: string): number {
-  if (a === b) {
-    return 0;
-  }
-  if (!a.length) {
-    return b.length;
-  }
-  if (!b.length) {
-    return a.length;
-  }
-
-  const prev = new Array<number>(b.length + 1);
-  const curr = new Array<number>(b.length + 1);
-
-  for (let j = 0; j <= b.length; j++) {
-    prev[j] = j;
-  }
-
-  for (let i = 1; i <= a.length; i++) {
-    curr[0] = i;
-    for (let j = 1; j <= b.length; j++) {
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost);
-    }
-    for (let j = 0; j <= b.length; j++) {
-      prev[j] = curr[j];
-    }
-  }
-
-  return prev[b.length];
+    return {
+      framework: project.framework,
+      kit: project.kit,
+      projectName: project.projectName,
+      ...(project === plan || project.suggestedModules !== undefined
+        ? { suggestedModules: resolveCreateModules(project.kit, project.suggestedModules) }
+        : {}),
+    };
+  });
+  const [primary, ...companions] = validated;
+  return {
+    ...plan,
+    ...primary,
+    suggestedModules: primary.suggestedModules ?? [],
+    ...(plan.secondaryProject ? { secondaryProject: companions.shift() } : {}),
+    ...(plan.additionalProjects ? { additionalProjects: companions } : {}),
+  };
 }
 
 /**
@@ -2174,10 +2080,19 @@ export async function parseCreationIntent(
     messages: AIMessage[],
     token?: vscode.CancellationToken
   ) => Promise<{ text: string; modelId: string }>,
-  stackIntent?: import('./creationStackIntent').CreationStackIntent
+  stackIntent?: import('./creationStackIntent').CreationStackIntent,
+  options?: {
+    originalRequest?: string;
+    preparedDraft?: { draft: Record<string, unknown>; modelId: string };
+  }
 ): Promise<{ plan: AICreationPlan; modelId: string; planSource: 'llm' | 'heuristic' }> {
   const logger = Logger.getInstance();
-  const unsupportedCapability = detectUnsupportedCreationStack(prompt, frameworkHint);
+  const constraints = options?.originalRequest || prompt;
+  const omitCatalogModules =
+    /\b(?:without|no) (?:optional |catalog )?modules\b|\u0628\u062f\u0648\u0646 \u0645\u0627\u0698\u0648\u0644/iu.test(
+      constraints
+    );
+  const unsupportedCapability = detectUnsupportedCreationStack(constraints, frameworkHint);
   if (unsupportedCapability) {
     throw new UnsupportedCreationStackError(
       labelCreatePlannerCapability(unsupportedCapability),
@@ -2185,9 +2100,13 @@ export async function parseCreationIntent(
     );
   }
 
-  const liveModules = await getWorkspaceAwareLiveModules(workspacePath);
+  const liveModules = options?.preparedDraft
+    ? null
+    : await getWorkspaceAwareLiveModules(workspacePath);
   const modulesSection = buildModuleListForPrompt(liveModules);
-  const installedElsewhere = await collectWorkspaceInstalledModules(workspacePath);
+  const installedElsewhere = options?.preparedDraft
+    ? []
+    : await collectWorkspaceInstalledModules(workspacePath);
   const installedElsewhereSection = buildWorkspaceInstalledModulesSection(installedElsewhere);
   const createInventorySection = listExecutableScaffoldKitCapabilities()
     .map(
@@ -2236,12 +2155,14 @@ Required JSON schema (return EXACTLY this):
   "secondaryProject": {
     "framework": "<companion framework id>",
     "kit": "<companion kit name>",
-    "projectName": "<kebab-case companion name>"
-  }
+    "projectName": "<kebab-case companion name>",
+    "suggestedModules": ["<slug>", ...]
+  },
+  "additionalProjects": []
 }
 
 Rules:
-- For fastapi/nestjs, ALWAYS include "free/essentials/settings" in suggestedModules
+- Propose only modules needed for the requested product and use exact catalog slugs. Use [] if none apply.
 - For go/springboot/dotnet/rust/laravel/frontend/desktop/agent/gateway/extension frameworks, set suggestedModules to []
 - AI agent requests use framework "microsoft-agent-framework" with "agent.microsoft.python" or "agent.microsoft.dotnet", framework "openai-agents" with "agent.openai.python" or "agent.openai.typescript", or framework "google-adk" with "agent.google-adk.python" or "agent.google-adk.typescript"
 - OpenRouter gateway requests use framework "openrouter" and "gateway.openrouter.typescript" or "gateway.openrouter.python". These kits are source-ready: do not call them qualified or stable. Attach is unsupported and Go is not available. Do not assign a synthetic HTTP port
@@ -2254,7 +2175,7 @@ Rules:
 - Use backend-only when the user asks for API, backend, service, database, integration service, or automation without UI/client needs
 - When both a user-facing app and backend/API/data workflow are requested, include secondaryProject with the companion stack (frontend + API)
 - When technical choices are delegated, prefer the portable same-runtime Next.js + NestJS pairing
-- Omit secondaryProject when only one runtime is needed
+- Include every requested project, including projects using the same framework. Omit secondaryProject for a single project; use additionalProjects for the third through eighth projects.
 - Use enterprise profile when: enterprise / compliance / multi-team / audit mentioned WITHOUT full-stack intent
 - Frontend frameworks (nextjs, vite-*, nuxt, angular, astro, sveltekit, remix) → profile node-only, kit frontend.*, projectName ends with -app
 - Backend APIs → projectName ends with -api (or -service for go/springboot/dotnet)
@@ -2279,7 +2200,10 @@ Rules:
   let planSource: 'llm' | 'heuristic' = 'heuristic';
 
   try {
-    if (textProvider) {
+    if (options?.preparedDraft) {
+      modelId = options.preparedDraft.modelId;
+      rawText = JSON.stringify(options.preparedDraft.draft);
+    } else if (textProvider) {
       const response = await textProvider(
         [
           { role: 'user', content: SYSTEM },
@@ -2313,7 +2237,11 @@ Rules:
   let parsed: Partial<AICreationPlan> = {};
   if (rawText.trim()) {
     try {
-      parsed = JSON.parse(extractJSON(rawText));
+      const value = JSON.parse(extractJSON(rawText));
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        throw new Error('The model did not return a creation proposal object.');
+      }
+      parsed = value;
     } catch {
       logger.warn('[AI] Creation intent JSON parse failed, using heuristic planner');
       parsed = buildHeuristicCreationDraft(prompt, mode, frameworkHint, stackIntent);
@@ -2326,25 +2254,31 @@ Rules:
   }
 
   const heuristicDraft = buildHeuristicCreationDraft(prompt, mode, frameworkHint, stackIntent);
-  const explicitFrameworks = inferExplicitCreationFrameworks(prompt);
+  const explicitFrameworks = namedCreationFrameworks(constraints);
   const parsedFramework = normalizeCreationFramework(parsed.framework, frameworkHint);
   const proposedFramework =
     explicitFrameworks.length > 0 && !explicitFrameworks.includes(parsedFramework)
-      ? heuristicDraft.framework
+      ? explicitFrameworks.includes(heuristicDraft.framework)
+        ? heuristicDraft.framework
+        : explicitFrameworks[0]
       : parsedFramework;
   const rawName = addWspSuffix(sanitizeKebab(parsed.workspaceName ?? 'my-workspace'));
-  const uniqueName = await resolveUniqueWorkspaceName(rawName);
+  const uniqueName = mode === 'workspace' ? await resolveUniqueWorkspaceName(rawName) : rawName;
   const inferredStackIntent = inferStackIntentFromPrompt(prompt.toLowerCase(), stackIntent);
   const companionStackIntent = stackIntent;
-  const proposedSecondary =
-    mode === 'workspace'
-      ? normalizeSecondaryProject(
-          parsed.secondaryProject,
-          prompt,
-          proposedFramework,
-          companionStackIntent
-        )
-      : undefined;
+  const additionalProjects = Array.isArray(parsed.additionalProjects)
+    ? parsed.additionalProjects
+    : [];
+  if (additionalProjects.some((project) => !project || typeof project.projectName !== 'string')) {
+    throw new Error('Each additional project requires a valid name and kit.');
+  }
+  const proposedSecondary = normalizeSecondaryProject(
+    parsed.secondaryProject,
+    constraints,
+    proposedFramework,
+    companionStackIntent,
+    additionalProjects.map((project) => project.framework)
+  );
   const reconciled = reconcileDelegatedCreationRuntimes({
     prompt,
     primary: proposedFramework,
@@ -2353,11 +2287,13 @@ Rules:
   });
   const fw = reconciled.primary;
   const secondaryProject = reconciled.secondary;
-  const kit = normalizeCreationKit(
-    parsed.kit,
-    fw,
-    heuristicDraft.framework === fw ? heuristicDraft.kit : undefined
-  );
+  const kit =
+    explicitCreationKit(fw, constraints) ??
+    normalizeCreationKit(
+      parsed.kit,
+      fw,
+      heuristicDraft.framework === fw ? heuristicDraft.kit : undefined
+    );
   const plan: AICreationPlan = {
     type: mode,
     workspaceName: uniqueName,
@@ -2376,13 +2312,51 @@ Rules:
     framework: fw,
     kit,
     projectName: sanitizeKebab(parsed.projectName ?? 'api'),
-    suggestedModules: normalizeSuggestedModules(parsed.suggestedModules, liveModules, fw),
+    suggestedModules: omitCatalogModules ? [] : resolveCreateModules(kit, parsed.suggestedModules),
     description:
       typeof parsed.description === 'string' && parsed.description.trim()
         ? parsed.description.trim().slice(0, 240)
         : prompt.trim().slice(0, 240),
-    secondaryProject,
+    secondaryProject:
+      secondaryProject && omitCatalogModules
+        ? { ...secondaryProject, suggestedModules: [] }
+        : secondaryProject,
+    ...(Array.isArray(parsed.additionalProjects)
+      ? {
+          additionalProjects: parsed.additionalProjects.map((project) => ({
+            ...project,
+            ...(omitCatalogModules ? { suggestedModules: [] } : {}),
+            kit: explicitCreationKit(project.framework, constraints) ?? project.kit,
+            projectName: sanitizeKebab(project.projectName),
+          })),
+        }
+      : {}),
   };
+  const projects = creationPlanProjects(plan);
+  const unassignedSlugs = omitCatalogModules
+    ? []
+    : [...new Set(constraints.match(/(?:free|pro)\/[a-z0-9_-]+\/[a-z0-9_-]+/gi))].filter(
+        (slug) => !projects.some(({ suggestedModules }) => suggestedModules?.includes(slug))
+      );
+  if (unassignedSlugs.length) {
+    const eligible = projects.filter(({ kit }) => isModuleCapableKit(kit));
+    if (eligible.length !== 1) {
+      throw new Error(
+        `Assign each requested catalog module to a compatible project: ${unassignedSlugs.join(', ')}.`
+      );
+    }
+    const [project] = eligible;
+    project.suggestedModules = resolveCreateModules(project.kit, [
+      ...(project.suggestedModules ?? []),
+      ...unassignedSlugs,
+    ]);
+  }
+  const covered = new Set(projects.map(({ framework }) => framework));
+  if (explicitFrameworks.some((framework) => !covered.has(framework))) {
+    throw new Error(
+      'The creation proposal omitted an explicitly requested framework. Specify the intended projects and retry.'
+    );
+  }
 
   return { plan: validateCreationPlanForExecution(plan), modelId, planSource };
 }

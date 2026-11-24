@@ -2,7 +2,7 @@ import * as path from 'path';
 import * as fs from 'fs-extra';
 import { WorkspaiCLI } from './rapidkitCLI';
 import { Logger } from '../utils/logger';
-import { CATEGORY_INFO, MODULES, ModuleData } from '../data/modules';
+import { CATEGORY_INFO, MODULE_CATALOG_CORE_VERSION, MODULES, ModuleData } from '../data/modules';
 import {
   coreRuntimeCacheKey,
   resolveCoreRuntime,
@@ -42,6 +42,7 @@ export type ModulesCatalogPayload = {
 export type ModulesCatalogMeta = {
   source: ModulesCatalogSource;
   rapidkitCoreVersion?: string;
+  referenceCoreVersion?: string;
   rapidkitCoreLocation?: CoreRuntimeResolution['location'];
   workspacePath?: string;
   loadError?: string;
@@ -227,6 +228,7 @@ export async function loadModulesCatalog(opts: {
     workspacePath: catalogWorkspacePath,
     ...(source === 'fallback'
       ? {
+          referenceCoreVersion: MODULE_CATALOG_CORE_VERSION,
           loadError:
             'The exact workspace Core catalog was unavailable. Bundled modules are reference-only until a live catalog is verified.',
         }

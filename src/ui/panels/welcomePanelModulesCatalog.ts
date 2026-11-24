@@ -5,7 +5,7 @@ import * as vscode from 'vscode';
 import { CoreVersionService } from '../../core/coreVersionService';
 import { KitsService } from '../../core/kitsService';
 import { ModulesCatalogService } from '../../core/modulesCatalogService';
-import { MODULES, type ModuleData } from '../../data/modules';
+import { MODULE_CATALOG_CORE_VERSION, MODULES, type ModuleData } from '../../data/modules';
 import { resolveCatalogWorkspaceRoot } from '../../utils/coreRuntimeResolver';
 import { getWorkspaceVenvRapidkitCandidates } from '../../utils/platformCapabilities';
 import type { DashboardSelectedProject } from './welcomePanelDashboardCommands';
@@ -161,6 +161,7 @@ export async function refreshModulesCatalog(
       host.setModulesCatalog(MODULES);
       postCatalog(MODULES, {
         source: 'fallback',
+        referenceCoreVersion: MODULE_CATALOG_CORE_VERSION,
         loadError: error instanceof Error ? error.message : String(error),
       });
     }

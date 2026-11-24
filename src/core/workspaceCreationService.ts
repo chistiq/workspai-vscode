@@ -7,6 +7,7 @@ import { hasWorkspaceRootMarkers, resolveNewWorkspacePath } from './workspacePat
 
 export type ManagedWorkspaceCreationInput = {
   name: string;
+  requireNew?: boolean;
   profile:
     | 'minimal'
     | 'python-only'
@@ -59,14 +60,15 @@ async function runCreation(input: ManagedWorkspaceCreationInput): Promise<Worksp
   const workspacePath = resolveNewWorkspacePath(workspaceName);
   const existed = hasWorkspaceRootMarkers(workspacePath);
 
-  if ((await fs.pathExists(workspacePath)) && !existed) {
+  if ((await fs.pathExists(workspacePath)) && (!existed || input.requireNew)) {
     return {
       ok: false,
       code: 'partial-workspace',
-      message:
-        `A directory named “${workspaceName}” already exists but is not a valid Workspai workspace. ` +
-        'Review or remove that partial directory, then retry.',
-      technicalMessage: `Partial workspace directory detected at ${workspacePath}`,
+      message: existed
+        ? `A Workspai workspace named “${workspaceName}” already exists. Choose a different name or select it explicitly.`
+        : `A directory named “${workspaceName}” already exists but is not a valid Workspai workspace. ` +
+          'Review or remove that partial directory, then retry.',
+      technicalMessage: `Workspace destination already exists at ${workspacePath}`,
       retryable: false,
       phase: 'preflight',
     };
@@ -115,6 +117,17 @@ export function createManagedWorkspace(
   const workspacePath = resolveNewWorkspacePath(input.name.trim());
   const active = activeCreations.get(workspacePath);
   if (active) {
+    if (input.requireNew) {
+      return Promise.resolve({
+        ok: false,
+        code: 'partial-workspace',
+        phase: 'preflight',
+        retryable: false,
+        message:
+          'A creation is already running for this workspace. Choose another name or wait and select it explicitly.',
+        technicalMessage: `Concurrent workspace creation at ${workspacePath}`,
+      });
+    }
     return active;
   }
   const operation = runCreation(input).finally(() => {

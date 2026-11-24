@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.51.2] - 2026-11-24
+
+### Changed
+
+- Pin the official Workspai CLI 0.83.0 runtime and npm dependency closure.
+  Sync the CLI contracts and Assistant reference material from the same package.
+- Show the RapidKit Core 0.6.3 Python requirement for Core-backed operations.
+  Keep the Node.js runtime for NestJS separate from its optional Core bridge.
+- List the extension as **Workspai – AI Coding Assistant** in the **AI** and
+  **Chat** categories. Refresh the description and search keywords.
+- Move the install link and first-task walkthrough to the top of the
+  Marketplace README and remove the embedded demo.
+
+- Review per-project RapidKit modules and their dependencies before building in
+  Create or Assistant. Install approved modules in the generated project and
+  verify them in its registry.
+
+### Fixed
+
+- Draft a new workspace when a Create request leaves its destination open and
+  no workspace is selected. Keep an explicit existing-workspace request ready
+  to resume, and recognize conversational Persian full-stack requests offline.
+- Keep every planned project, including same-framework siblings, in the
+  workspace selected for approval. Report workspace, scaffold and module
+  failures with the completed work instead of reporting an unverified success.
+- Preserve explicitly requested kit variants and route clear Persian creation
+  requests when the model is unavailable.
+- Exercise the installed release VSIX in an isolated VS Code profile, including
+  official CLI acquisition and project-scoped test selection.
+- Rebuild the smoke-test runtime from the release pin. Reject stale local
+  candidates during release verification.
+- Refresh the offline module catalog from Core 0.6.3 and label it as reference
+  data in the UI and Assistant. Keep all 31 Create starters available for
+  browsing through the pinned planner contract. Discard module bridge caches
+  created without the producing CLI identity.
+
 ## [0.51.1] - 2026-11-22
 
 ### Changed

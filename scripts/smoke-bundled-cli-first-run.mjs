@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const runtimeRoot = path.join(repoRoot, 'dist', 'workspai-runtime');
 const manifestPath = path.join(runtimeRoot, 'manifest.json');
+const policyPath = path.join(repoRoot, 'contracts', 'extension-cli-release-policy.v1.json');
 const workspaceName = 'first-run-smoke-wsp';
 
 function readJson(filePath) {
@@ -30,6 +31,16 @@ const isolatedHome = path.join(tempRoot, 'home');
 
 try {
   const manifest = readJson(manifestPath);
+  const policy = readJson(policyPath);
+  if (
+    manifest.channel !== 'release' ||
+    manifest.distribution !== 'release' ||
+    manifest.cli?.version !== policy.verifiedCliVersion
+  ) {
+    fail(
+      `First-run smoke requires release runtime ${policy.verifiedCliVersion}. Found ${manifest.channel} ${manifest.cli?.version}.`
+    );
+  }
   if (
     manifest.schemaVersion !== 'workspai-vscode-bundled-cli-runtime.v1' ||
     manifest.cli?.name !== 'workspai' ||

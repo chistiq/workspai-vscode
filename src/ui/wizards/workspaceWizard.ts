@@ -1,3 +1,4 @@
+import { CORE_PYTHON_REQUIREMENT } from '../../contracts/rapidkitCoreRuntime';
 /**
  * Workspace Wizard
  * 6-step interactive wizard for workspace creation:
@@ -207,7 +208,7 @@ export class WorkspaceWizard {
             {
               label: '$(symbol-variable) venv',
               description: 'Pure Python venv + pip - no extra tools needed',
-              detail: 'Simplest setup, runs on any Python 3.10+ installation',
+              detail: `Use venv and pip with ${CORE_PYTHON_REQUIREMENT}`,
               value: 'venv',
             },
             {

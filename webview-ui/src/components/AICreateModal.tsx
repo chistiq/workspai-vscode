@@ -1,3 +1,4 @@
+import { corePythonRequirementForKit } from '@workspai-contracts/rapidkitCoreRuntime';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { Sparkles, Wand2, ArrowLeft, Check, ChevronRight, Loader2, Minus } from 'lucide-react';
 import { EnterpriseModal, EnterpriseModalNotice } from './EnterpriseModal';
@@ -900,6 +901,9 @@ export function AICreateModal({
               </span>
             </div>
 
+            {corePythonRequirementForKit(plan.kit) ? (
+              <p className="ws-field__help">{corePythonRequirementForKit(plan.kit)}</p>
+            ) : null}
             <div className="ai-create-fields">
               {mode === 'workspace' && (
                 <>

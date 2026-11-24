@@ -5,7 +5,9 @@ import {
   CREATE_INTENT_ROUTE_TOOL,
   parseCreateIntentRoute,
   routeCreateIntent,
+  resolveCreatePlanningTarget,
 } from '../core/createIntentRouter.js';
+import { buildHeuristicCreationDraft } from '../core/aiCreationHeuristic.js';
 
 describe('Create intent router', () => {
   it('grounds the model in the Create tab and Workspai architecture before planning', () => {
@@ -31,6 +33,106 @@ describe('Create intent router', () => {
     expect(prompt).toContain('Intent routing is not solution discovery');
     expect(prompt).toContain('Never repeat a clarification');
   });
+
+  it.each([
+    [
+      '\u0628\u0631\u0627\u06cc \u0645\u062f\u06cc\u0631\u06cc\u062a \u0633\u0641\u0627\u0631\u0634\u200c\u0647\u0627 \u06cc\u06a9 \u0633\u0631\u0648\u06cc\u0633 \u0628\u0627 FastAPI \u0628\u0633\u0627\u0632',
+      undefined,
+    ],
+    [
+      '\u062f\u0631 \u0648\u0631\u06a9\u200c\u0627\u0633\u067e\u06cc\u0633 \u062c\u062f\u06cc\u062f \u06cc\u06a9 \u0633\u0631\u0648\u06cc\u0633 \u0628\u0627 FastAPI \u0628\u0633\u0627\u0632',
+      'workspace',
+    ],
+    [
+      '\u062f\u0631 \u0648\u0631\u06a9\u200c\u0627\u0633\u067e\u06cc\u0633 \u0641\u0639\u0644\u06cc \u06cc\u06a9 \u0633\u0631\u0648\u06cc\u0633 \u0628\u0627 FastAPI \u0628\u0633\u0627\u0632',
+      'project',
+    ],
+  ])('routes a clear Persian request without a model: %s', async (request, target) => {
+    const route = await routeCreateIntent({
+      request,
+      selectedTarget: 'project',
+      complete: async () => {
+        throw new Error('Model offline');
+      },
+    });
+    expect(route).toMatchObject({ intent: 'create', confidence: 'high' });
+    expect(route.creationTarget).toBe(target);
+  });
+
+  const storefrontRequest =
+    '\u06cc\u06a9 \u067e\u0631\u0648\u0698\u0647 \u0641\u0648\u0644 \u0627\u0633\u062a\u06cc\u06a9 \u0645\u06cc\u062e\u0627\u0645 \u0628\u0631\u0627\u06cc \u06cc\u06a9 \u0641\u0631\u0648\u0634\u06af\u0627\u0647 \u0645\u062d\u0635\u0648\u0644\u0627\u062a \u0627\u0631\u0627\u06cc\u0634\u06cc';
+
+  it('drafts the reported Persian full-stack store in a new workspace when the model guesses an existing destination', async () => {
+    const route = await routeCreateIntent({
+      request: storefrontRequest,
+      selectedTarget: 'workspace',
+      complete: async () => ({
+        type: 'tool',
+        toolName: CREATE_INTENT_ROUTE_TOOL,
+        input: {
+          intent: 'create',
+          confidence: 'high',
+          normalizedRequest: storefrontRequest,
+          userResponse: '',
+          reason: 'A full-stack storefront was requested.',
+          recommendedAction: 'none',
+          creationTarget: 'project',
+        },
+      }),
+    });
+    expect(route.creationTarget).toBeUndefined();
+    const destination = resolveCreatePlanningTarget({
+      requestedDestination: route.creationTarget,
+      selectedTarget: 'workspace',
+      selectorExplicit: false,
+      workspaceAvailable: false,
+    });
+    expect(destination).toBe('workspace');
+    expect(buildHeuristicCreationDraft(route.normalizedRequest, 'workspace')).toMatchObject({
+      kit: 'nestjs.standard',
+      profile: 'node-only',
+      secondaryProject: { kit: 'frontend.nextjs' },
+      suggestedModules: expect.arrayContaining(['free/billing/cart', 'free/billing/inventory']),
+    });
+  });
+
+  it('recognizes the same request offline after a social exchange', async () => {
+    const route = await routeCreateIntent({
+      request: storefrontRequest,
+      selectedTarget: 'workspace',
+      history: [
+        { role: 'user', content: 'hi' },
+        { role: 'assistant', content: 'Hi! What would you like to create?' },
+      ],
+      complete: async () => {
+        throw new Error('Model unavailable');
+      },
+    });
+    expect(route).toMatchObject({ intent: 'create', confidence: 'high' });
+    expect(route.normalizedRequest).toContain(storefrontRequest);
+  });
+
+  it.each([
+    [undefined, 'project', false, false, 'workspace'],
+    [undefined, 'project', true, false, 'select-workspace'],
+    ['project', 'workspace', false, false, 'select-workspace'],
+    ['project', 'workspace', false, true, 'project'],
+    ['workspace', 'project', true, true, 'workspace'],
+    [undefined, 'project', false, true, 'project'],
+    [undefined, 'workspace', true, true, 'workspace'],
+  ] as const)(
+    'resolves the requested destination %s with selector %s',
+    (requestedDestination, selectedTarget, selectorExplicit, workspaceAvailable, expected) => {
+      expect(
+        resolveCreatePlanningTarget({
+          requestedDestination,
+          selectedTarget,
+          selectorExplicit,
+          workspaceAvailable,
+        })
+      ).toBe(expected);
+    }
+  );
 
   it('allows only a high-confidence create route to reach planning', async () => {
     const complete = vi.fn(async () => ({

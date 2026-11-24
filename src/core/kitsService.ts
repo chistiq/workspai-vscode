@@ -8,6 +8,8 @@ import * as fs from 'fs-extra';
 import * as path from 'path';
 import { run } from '../utils/exec';
 import { buildNpxRapidkitArgs } from '../utils/platformCapabilities';
+import createPlanner from '../contracts/create-planner-capabilities.v1.json';
+import releasePolicy from '../../contracts/extension-cli-release-policy.v1.json';
 import {
   AGENT_SCAFFOLD_KITS,
   GATEWAY_SCAFFOLD_KITS,
@@ -47,9 +49,15 @@ export interface KitsLoadResult {
 }
 
 interface KitsCache {
+  cliVersion: string;
   kits: Kit[];
   timestamp: number;
 }
+
+const AVAILABLE_KIT_ENTRIES = [
+  ...createPlanner.nativeCreate,
+  ...createPlanner.officialCreate.filter((entry) => entry.canExecuteCreate),
+];
 
 const DEFAULT_KITS_FETCH_TIMEOUT_MS = 15000;
 const MIN_COMMAND_TIMEOUT_MS = 1000;
@@ -137,7 +145,11 @@ export class KitsService {
       const kits = this._mergeWithFallback(parsed.kits);
 
       // Save to cache
-      await this._saveCache({ kits, timestamp: Date.now() });
+      await this._saveCache({
+        cliVersion: releasePolicy.verifiedCliVersion,
+        kits: parsed.kits,
+        timestamp: Date.now(),
+      });
       console.log('[KitsService] Kits fetched and cached:', kits.length);
 
       return { kits, source: 'live' };
@@ -165,19 +177,14 @@ export class KitsService {
     }
   }
 
-  /**
-   * Merge kits with fallback list – ensures new categories (e.g. Go) are always
-   * present even when the live cache was built before they were added.
-   */
+  /** Keep the Create contract authoritative for available IDs and framework ownership. */
   private _mergeWithFallback(kits: Kit[]): Kit[] {
-    const fallback = this._getFallbackKits();
-    const merged = [...kits];
-    for (const fallbackKit of fallback) {
-      if (!merged.some((k) => k.name === fallbackKit.name)) {
-        merged.push(fallbackKit);
-      }
-    }
-    return merged;
+    const liveById = new Map(kits.map((kit) => [kit.name, kit]));
+    return this._getFallbackKits().map((kit) => ({
+      ...kit,
+      ...liveById.get(kit.name),
+      category: kit.category,
+    }));
   }
 
   /**
@@ -205,7 +212,15 @@ export class KitsService {
   private async _loadCache(): Promise<KitsCache | null> {
     try {
       if (await fs.pathExists(this.cacheFilePath)) {
-        return await fs.readJson(this.cacheFilePath);
+        const cache = (await fs.readJson(this.cacheFilePath)) as Partial<KitsCache> | null;
+        if (
+          cache?.cliVersion === releasePolicy.verifiedCliVersion &&
+          Array.isArray(cache.kits) &&
+          typeof cache.timestamp === 'number' &&
+          Number.isFinite(cache.timestamp)
+        ) {
+          return { cliVersion: cache.cliVersion, kits: cache.kits, timestamp: cache.timestamp };
+        }
       }
     } catch (error) {
       console.error('[KitsService] Failed to load cache:', error);
@@ -223,8 +238,7 @@ export class KitsService {
   }
 
   private _getFallbackKits(): Kit[] {
-    // Hardcoded fallback kits (synced from npm templates)
-    return [
+    const presentation: Kit[] = [
       {
         name: 'fastapi.standard',
         display_name: 'FastAPI Standard Kit',
@@ -341,5 +355,15 @@ export class KitsService {
         description: definition.description,
       })),
     ];
+    const presentationById = new Map(presentation.map((kit) => [kit.name, kit]));
+    return AVAILABLE_KIT_ENTRIES.map((entry) => ({
+      ...(presentationById.get(entry.id) ?? {
+        name: entry.id,
+        display_name: entry.id,
+        version: entry.versionPolicy,
+        description: `Workspai starter for ${entry.plannerFramework} (${entry.runtime}).`,
+      }),
+      category: entry.plannerFramework,
+    }));
   }
 }

@@ -97,11 +97,15 @@ function normalizeWorkspaceBindingPath(value: string | undefined): string | null
 export function createScopeBinding(input: {
   target: CreatePlanTarget;
   workspacePath?: string;
+  workspaceIdentity?: string;
 }): string {
   return createPlanDigest({
     target: input.target,
     workspacePath:
       input.target === 'project' ? normalizeWorkspaceBindingPath(input.workspacePath) : null,
+    ...(input.target === 'project' && input.workspaceIdentity
+      ? { workspaceIdentity: input.workspaceIdentity }
+      : {}),
   });
 }
 

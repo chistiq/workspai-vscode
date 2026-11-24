@@ -44,12 +44,12 @@ describe('React Create tab ↔ host protocol parity (roadmap 2.11d)', () => {
       /useEffect\(\(\) => \{[\s\S]{0,500}sidebarRefreshScope[\s\S]{0,200}sidebarRefreshModels/
     );
     expect(provider).toContain(
-      "let workspacePath = createTarget === 'project' ? scope.workspacePath : undefined"
+      "const workspacePath = createTarget === 'project' ? selectedWorkspacePath : undefined"
     );
     expect(provider).toContain("executeCommand('workspai.getSelectedWorkspace')");
     expect(provider).toContain('const selectedWorkspacePath = selectedWorkspace?.path?.trim()');
     expect(provider.indexOf('await this._readSelectedWorkspaceScope()')).toBeLessThan(
-      provider.indexOf("failureCode: 'workspace-selection-required'")
+      provider.indexOf("action: 'select-workspace'")
     );
   });
 

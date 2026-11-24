@@ -1,6 +1,6 @@
 /**
  * Python Environment Checker
- * Validates Python 3.10+ installation and venv support before critical operations
+ * Validates RapidKit Core interpreter compatibility and venv support
  */
 
 import { run } from './exec';
@@ -8,20 +8,23 @@ import { Logger } from './logger';
 import { requirementCache } from './requirementCache';
 import * as os from 'os';
 import * as path from 'path';
+import {
+  CORE_PYTHON_REQUIREMENT,
+  parsePythonVersion,
+  supportsCorePython,
+} from '../contracts/rapidkitCoreRuntime';
 
 export interface PythonCheckResult {
   available: boolean;
   version?: string;
   versionNumber?: { major: number; minor: number };
-  meetsMinimumVersion: boolean; // Python 3.10+
-  command?: 'python3' | 'python';
+  meetsMinimumVersion: boolean;
+  command?: string;
   venvSupport: boolean;
   rapidkitCoreInstalled: boolean;
   error?: string;
   recommendation?: string;
 }
-
-const MINIMUM_PYTHON_VERSION = { major: 3, minor: 10 };
 
 /**
  * Comprehensive Python environment check
@@ -30,8 +33,13 @@ const MINIMUM_PYTHON_VERSION = { major: 3, minor: 10 };
 export async function checkPythonEnvironment(): Promise<PythonCheckResult> {
   const logger = Logger.getInstance();
 
-  // Try python3 first, then python
-  for (const cmd of ['python3', 'python'] as const) {
+  const candidates =
+    process.platform === 'win32'
+      ? ['python3', 'python', 'py']
+      : ['python3', 'python', 'python3.11', 'python3.12', 'python3.13', 'python3.14'];
+  let unsupportedVersion: PythonCheckResult | undefined;
+  let missingVenv: PythonCheckResult | undefined;
+  for (const cmd of candidates) {
     try {
       // Check if Python is available
       const versionResult = await run(cmd, ['--version'], {
@@ -46,20 +54,9 @@ export async function checkPythonEnvironment(): Promise<PythonCheckResult> {
       const version = versionResult.stdout?.trim() || versionResult.stderr?.trim() || '';
       logger.debug(`Found Python: ${cmd} -> ${version}`);
 
-      // Parse version number (e.g., "Python 3.13.5" -> { major: 3, minor: 13 })
-      const versionMatch = version.match(/Python (\d+)\.(\d+)/);
-      const versionNumber = versionMatch
-        ? { major: parseInt(versionMatch[1]), minor: parseInt(versionMatch[2]) }
-        : undefined;
-
-      const meetsMinimumVersion = versionNumber
-        ? versionNumber.major > MINIMUM_PYTHON_VERSION.major ||
-          (versionNumber.major === MINIMUM_PYTHON_VERSION.major &&
-            versionNumber.minor >= MINIMUM_PYTHON_VERSION.minor)
-        : false;
-
-      if (!meetsMinimumVersion) {
-        return {
+      const versionNumber = parsePythonVersion(version);
+      if (!supportsCorePython(versionNumber)) {
+        unsupportedVersion ??= {
           available: true,
           version,
           versionNumber,
@@ -67,23 +64,24 @@ export async function checkPythonEnvironment(): Promise<PythonCheckResult> {
           command: cmd,
           venvSupport: false,
           rapidkitCoreInstalled: false,
-          error: `Python ${versionNumber?.major}.${versionNumber?.minor} found, but RapidKit requires Python 3.10+`,
-          recommendation: `Please install Python 3.10 or higher. Current: ${version}`,
+          error: `${version || 'An unidentified Python version'} was found. RapidKit Core requires ${CORE_PYTHON_REQUIREMENT}.`,
+          recommendation: `Install ${CORE_PYTHON_REQUIREMENT} and make it available on PATH.`,
         };
+        continue;
       }
 
       // Check venv support
       const venvCheck = await run(cmd, ['-m', 'venv', '--help'], {
         timeout: 3000,
         stdio: 'pipe',
-      });
+      }).catch(() => undefined);
 
-      const venvSupport = venvCheck.exitCode === 0;
+      const venvSupport = venvCheck?.exitCode === 0;
 
       if (!venvSupport) {
         const pythonVersion = `${versionNumber?.major}.${versionNumber?.minor}`;
 
-        return {
+        missingVenv ??= {
           available: true,
           version,
           versionNumber,
@@ -94,6 +92,7 @@ export async function checkPythonEnvironment(): Promise<PythonCheckResult> {
           error: `Python ${pythonVersion} is missing venv support`,
           recommendation: getVenvInstallRecommendation(pythonVersion),
         };
+        continue;
       }
 
       // Check if rapidkit-core is installed - Comprehensive detection
@@ -281,16 +280,17 @@ export async function checkPythonEnvironment(): Promise<PythonCheckResult> {
     }
   }
 
-  // No Python found
-  return {
-    available: false,
-    meetsMinimumVersion: false,
-    venvSupport: false,
-    rapidkitCoreInstalled: false,
-    error: 'Python not found',
-    recommendation:
-      'Install Python 3.10+ from https://www.python.org/downloads/ or your package manager',
-  };
+  return (
+    missingVenv ??
+    unsupportedVersion ?? {
+      available: false,
+      meetsMinimumVersion: false,
+      venvSupport: false,
+      rapidkitCoreInstalled: false,
+      error: 'Python not found',
+      recommendation: `Install ${CORE_PYTHON_REQUIREMENT} from https://www.python.org/downloads/ or your package manager`,
+    }
+  );
 }
 
 /**
@@ -344,18 +344,18 @@ export async function hasPythonVenv(): Promise<boolean> {
  */
 export function getPythonErrorMessage(checkResult: PythonCheckResult): string {
   if (!checkResult.available) {
-    return `Python not found on your system.\n\nWorkspai requires Python 3.10 or higher through RapidKit Core.\n\n${checkResult.recommendation}\n\nAfter installing Python, restart VS Code.`;
+    return `Python not found on your system.\n\nRapidKit Core requires ${CORE_PYTHON_REQUIREMENT}.\n\n${checkResult.recommendation}\n\nAfter installing Python, restart VS Code.`;
   }
 
   if (!checkResult.meetsMinimumVersion) {
-    return `${checkResult.error}.\n\nWorkspai requires Python 3.10 or higher for RapidKit Core compatibility.\n\nPlease upgrade Python and restart VS Code.`;
+    return `${checkResult.error}\n\n${checkResult.recommendation} Restart VS Code after upgrading.`;
   }
 
   if (!checkResult.venvSupport) {
     return `${checkResult.error}.\n\n${checkResult.recommendation}\n\nAfter installation, restart VS Code.`;
   }
 
-  return 'Python environment check failed. Please ensure Python 3.10+ is properly installed.';
+  return `Python environment check failed. Verify that ${CORE_PYTHON_REQUIREMENT} is installed.`;
 }
 
 /**

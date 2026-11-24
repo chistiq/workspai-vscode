@@ -17,6 +17,7 @@ export type CreateGuidanceAction =
   | 'none'
   | 'plan-workspace'
   | 'plan-project'
+  | 'select-workspace'
   | 'adopt-project'
   | 'import-project'
   | 'import-workspace'
@@ -70,7 +71,7 @@ export const CREATE_INTENT_ROUTE_TOOL_SCHEMA = {
       type: 'string',
       enum: ['workspace', 'project', 'unspecified'],
       description:
-        'For create: resolve the destination from the user request; use the selector only when the request leaves it unspecified. For other intents use unspecified.',
+        'For create: report only a destination explicitly requested by the user. Otherwise use unspecified.',
     },
     recommendedAction: {
       type: 'string',
@@ -192,7 +193,7 @@ export function buildCreateIntentRoutingPrompt(input: {
     '',
     'Workspai architecture you must respect:',
     '- Workspai is workspace-first: one canonical workspace owns registered projects, model, graph, evidence, goals, skills, repair, and verification.',
-    '- Create can scaffold a new canonical workspace plus its first project, or scaffold one project into the active canonical workspace explicitly selected by the user.',
+    '- Create can scaffold projects in a new canonical workspace or in the active canonical workspace explicitly selected by the user.',
     '- Adopt links existing source into a workspace without moving or copying it. Import consumes an existing Workspai project/workspace or supported archive.',
     '- Arbitrary edits to existing source belong in Assistant Agent, where changes are evidence-bound, reviewable, rollback-aware, and verified.',
     `- Executable create targets from the canonical capability contract: ${executableCreateTargets}.`,
@@ -223,9 +224,9 @@ export function buildCreateIntentRoutingPrompt(input: {
     '- For create, normalizedRequest must be a self-contained creation brief using the current conversation; use high confidence only when a trustworthy plan can be drafted.',
     '- A request to add or fix a feature inside existing source is assistant-task, even if it uses words such as build or create.',
     '- For create, set creationTarget from the user request in any language: a separate/new workspace is workspace; a project in the current/active workspace is project. Preserve this destination in normalizedRequest. Explicit user intent takes precedence over the selector, which may have been chosen automatically.',
-    '- If the user leaves the destination unspecified, use the selected target as the default. Do not invent a different existing workspace. For non-create intents set creationTarget to unspecified.',
+    '- If the user leaves the destination unspecified, return unspecified. The host applies the selector and the actual workspace selection. The word project by itself does not indicate an existing workspace.',
     '- Project creation requires an active selected workspace. Never silently fall back to another or default workspace.',
-    '- userResponse must be concise, natural, and useful. Ask at most one focused question for clarification.',
+    '- Write userResponse in the language of the current user message, including informal or transliterated messages. Keep it concise, natural, and useful. Ask at most one focused question for clarification.',
     '- For social conversation, respond as the Workspai Create guide. Never echo the user message verbatim and never describe yourself as just a program, AI, language model, or bot.',
     '- Do not claim that files were created, inspected, adopted, imported, or modified.',
     '- Do not reveal machine-local paths.',
@@ -236,8 +237,61 @@ export function buildCreateIntentRoutingPrompt(input: {
   ].join('\n');
 }
 
+function explicitCreationDestination(value: string): 'workspace' | 'project' | undefined {
+  const text = value.replace(/[\u200c\u200d]/gu, ' ');
+  const newWorkspace =
+    /\b(?:new|fresh|separate|its own|independent) workspace\b/i.test(text) ||
+    /(?:\u0648\u0631\u06a9\s*\u0627\u0633\u067e\u06cc\u0633|\u0641\u0636\u0627\u06cc \u06a9\u0627\u0631\u06cc)\s*(?:\u062c\u062f\u06cc\u062f|\u062c\u062f\u0627|\u062a\u0627\u0632\u0647)/u.test(
+      text
+    );
+  const currentWorkspace =
+    /\b(?:current|active|selected|existing|same|this) workspace\b/i.test(text) ||
+    /(?:\u0648\u0631\u06a9\s*\u0627\u0633\u067e\u06cc\u0633|\u0641\u0636\u0627\u06cc \u06a9\u0627\u0631\u06cc)\s*(?:\u0641\u0639\u0644\u06cc|\u062c\u0627\u0631\u06cc|\u06a9\u0646\u0648\u0646\u06cc|\u0641\u0639\u0627\u0644)/u.test(
+      text
+    );
+  if (newWorkspace === currentWorkspace) {
+    return undefined;
+  }
+  return newWorkspace ? 'workspace' : 'project';
+}
+
+export function resolveCreatePlanningTarget(input: {
+  requestedDestination?: 'workspace' | 'project';
+  selectedTarget: 'workspace' | 'project';
+  selectorExplicit: boolean;
+  workspaceAvailable: boolean;
+}): 'workspace' | 'project' | 'select-workspace' {
+  const preferred = input.requestedDestination ?? input.selectedTarget;
+  if (preferred === 'workspace' || input.workspaceAvailable) {
+    return preferred;
+  }
+  return input.requestedDestination === 'project' || input.selectorExplicit
+    ? 'select-workspace'
+    : 'workspace';
+}
+
 function isExplicitCreateRequest(value: string): boolean {
-  return EXPLICIT_CREATE_PATTERN.test(value) && CREATE_TARGET_PATTERN.test(value);
+  const normalized = value.replace(/[\u200c\u200d]/gu, ' ');
+  if (
+    /^\s*(?:how|what|why|which)\b|\b(?:do not|don't|never)\s+(?:create|scaffold|bootstrap|generate|start|set up|build)\b/i.test(
+      normalized
+    ) ||
+    /(?:\u0686\u0637\u0648\u0631|\u0686\u06af\u0648\u0646\u0647|\u0686\u062c\u0648\u0631\u06cc|\u0646\u0633\u0627\u0632|\u0627\u06cc\u062c\u0627\u062f \u0646\u06a9\u0646)/u.test(
+      normalized
+    )
+  ) {
+    return false;
+  }
+  const english =
+    EXPLICIT_CREATE_PATTERN.test(normalized) && CREATE_TARGET_PATTERN.test(normalized);
+  const persian =
+    /(?:\u0628\u0633\u0627\u0632|\u0627\u06cc\u062c\u0627\u062f \u06a9\u0646|\u0631\u0627\u0647 \u0627\u0646\u062f\u0627\u0632|\u0631\u0627\u0647 \u0628\u0646\u062f\u0627\u0632|(?:^|[^\p{L}])\u0645\u06cc\s*\u062e(?:\u0648\u0627(?:\u0647)?|\u0627)\u0645)/u.test(
+      normalized
+    ) &&
+    /(?:\u067e\u0631\u0648\u0698\u0647|\u0648\u0631\u06a9\s*\u0627\u0633\u067e\u06cc\u0633|\u0633\u0631\u0648\u06cc\u0633|\u0648\u0628\u0633\u0627\u06cc\u062a|\u0648\u0628 \u0633\u0627\u06cc\u062a|\u0627\u067e\u0644\u06cc\u06a9\u06cc\u0634\u0646|\u0628\u0631\u0646\u0627\u0645\u0647|\u0641\u0631\u0627\u0646\u062a|\u0628\u06a9 \u0627\u0646\u062f|\u0627\u06cc\u062c\u0646\u062a|\bapi\b)/iu.test(
+      normalized
+    );
+  return english || persian;
 }
 
 function recoverDelegatedCreate(input: {
@@ -253,10 +307,13 @@ function recoverDelegatedCreate(input: {
   const clarificationAlreadyAsked = (input.history ?? []).some(
     (entry) => entry.role === 'assistant' && entry.content.includes('?')
   );
+  const delegated = /\b(?:choose|pick|decide)\b[^.!?]{0,60}\bfor me\b|\byou decide\b/i.test(
+    input.request
+  );
   const creationRequest = isExplicitCreateRequest(input.request)
     ? input.request.trim()
     : clarificationAlreadyAsked
-      ? (priorCreationRequest ?? reversedUserHistory[0]?.content)?.trim()
+      ? (priorCreationRequest ?? (delegated ? reversedUserHistory[0]?.content : undefined))?.trim()
       : undefined;
   if (!creationRequest) {
     return null;
@@ -269,6 +326,7 @@ function recoverDelegatedCreate(input: {
       2_000
     ),
     userResponse: '',
+    creationTarget: explicitCreationDestination(creationRequest),
     reason:
       'A clear creation outcome exists and unspecified implementation choices belong to the reviewable planner.',
     recommendedAction: 'none',
@@ -284,6 +342,14 @@ function enforceCreateRoutingPolicy(
 ): CreateIntentRoute {
   const resolved =
     route.intent === 'clarification' ? (recoverDelegatedCreate(input) ?? route) : route;
+  if (resolved.intent === 'create') {
+    return {
+      ...resolved,
+      creationTarget:
+        explicitCreationDestination(input.request) ??
+        (resolved !== route ? resolved.creationTarget : undefined),
+    };
+  }
   if (resolved.intent !== 'conversation' && resolved.intent !== 'question') {
     return resolved;
   }

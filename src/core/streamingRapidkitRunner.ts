@@ -48,6 +48,8 @@ export interface StreamingRunOptions {
   timeoutMs?: number;
   /** Optional stdin payload (e.g. feedback JSON). */
   stdin?: string;
+  /** Defer native lock updates during the approved scaffold-and-module operation. */
+  deferCoreModuleLockSync?: boolean;
   /** Fired for every decoded `cli-log-event.v1` event. */
   onEvent?: (event: CliLogEvent) => void;
   /** Fired for progress-advancing events with a UI-ready message. */
@@ -108,7 +110,7 @@ const defaultSpawn: RapidkitSpawn = (command, args, options) => {
 
     const result = await subprocess;
     return {
-      exitCode: typeof result.exitCode === 'number' ? result.exitCode : 0,
+      exitCode: typeof result.exitCode === 'number' ? result.exitCode : 1,
       stdout: result.stdout ?? '',
       stderr: result.stderr ?? '',
     };
@@ -169,6 +171,7 @@ export async function runRapidkitStreaming<T = unknown>(
     ...process.env,
     ...execution.env,
     RAPIDKIT_LOG_FORMAT: 'json',
+    ...(options.deferCoreModuleLockSync ? { RAPIDKIT_SKIP_LOCK_SYNC: '1' } : {}),
   });
 
   const subprocess = spawn(execution.command, execution.args, {

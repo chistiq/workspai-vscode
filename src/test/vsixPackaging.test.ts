@@ -110,7 +110,9 @@ describe('VSIX packaging exclusions', () => {
     expect(script).toContain('findLocalPathViolations');
     expect(script).toContain('VSIX contains machine-local paths');
     expect(script).toContain("options.channel === 'release' ? 'release' : 'local-vsix'");
-    expect(electronSmokeTests).toContain("[runtimeEntry, 'commands', '--json']");
+    expect(electronSmokeScript).toContain("'--install-extension', artifactPath");
+    expect(electronSmokeTests).toContain("['commands', '--json']");
+    expect(electronSmokeTests).toContain("path.join(runtimeRoot, 'install.json')");
     expect(electronSmokeTests).toContain('runtimeCapabilities.commandMap?.doctor');
     expect(electronSmokeTests).toContain("doctorCapability?.status === 'supported'");
 
@@ -147,7 +149,7 @@ describe('VSIX packaging exclusions', () => {
       expect(script, denied).toContain(denied);
     }
 
-    expect(electronSmokeScript).toContain("downloadAndUnzipVSCode } from '@vscode/test-electron'");
+    expect(electronSmokeScript).toContain('await downloadAndUnzipVSCode(');
     expect(electronSmokeScript).toContain(
       "version: process.env.WORKSPAI_VSCODE_TEST_VERSION || '1.106.0'"
     );
@@ -158,8 +160,8 @@ describe('VSIX packaging exclusions', () => {
     expect(electronSmokeScript).toContain(
       "View container 'workspai-native-sidebar' does not exist"
     );
-    expect(electronSmokeScript).toContain('`--extensionDevelopmentPath=${extensionDir}`');
-    expect(electronSmokeScript).toContain('`--extensionTestsPath=${extensionTestsPath}`');
+    expect(electronSmokeScript).toContain('`--extensionDevelopmentPath=${driverDirectory}`');
+    expect(electronSmokeScript).toContain("path.join(driverDirectory, 'test.cjs')");
     expect(electronSmokeScript).toContain('--disable-workspace-trust');
     expect(electronSmokeScript).toContain('--folder-uri');
     expect(electronSmokeScript).toContain('workspace-model.json');

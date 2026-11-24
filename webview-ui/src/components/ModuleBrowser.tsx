@@ -356,6 +356,9 @@ export function ModuleBrowser({
             {catalogMeta?.source === 'fallback' ? (
               <>
                 Bundled reference catalog
+                {catalogMeta.referenceCoreVersion
+                  ? ` · based on RapidKit Core ${catalogMeta.referenceCoreVersion}`
+                  : ''}
                 {catalogMeta.rapidkitCoreVersion
                   ? ` · Core ${catalogMeta.rapidkitCoreVersion} could not be verified`
                   : ''}
